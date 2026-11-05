@@ -1,0 +1,21 @@
+{
+  "name": "bloodyfights",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Card game competitivo 1v1 a turni su tabellone posizionale 4x2",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "npm test --workspace @bloodyfights/motore && npm test --workspace @bloodyfights/pixel && npm test --workspace @bloodyfights/web",
+    "dev": "npm run dev --workspace @bloodyfights/web",
+    "build": "npm run build --workspace @bloodyfights/web",
+    "anteprima": "node apps/web/strumenti/anteprima.mjs",
+    "simula": "node packages/motore/scripts/simula.ts"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "license": "UNLICENSED"
+}

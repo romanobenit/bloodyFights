@@ -1,0 +1,10 @@
+{
+  "name": "@bloodyfights/bot",
+  "version": "0.1.0",
+  "description": "Avversario elementare: sceglie una mossa legale nello stato corrente",
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@bloodyfights/motore": "*"
+  }
+}

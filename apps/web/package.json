@@ -1,0 +1,18 @@
+{
+  "name": "@bloodyfights/web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Tabellone giocabile della fase 1, senza dipendenze",
+  "scripts": {
+    "build": "node strumenti/compila.mjs",
+    "dev": "node strumenti/servi.mjs",
+    "preview": "node strumenti/servi.mjs --senza-watch",
+    "test": "node --test --experimental-strip-types test/*.test.ts"
+  },
+  "dependencies": {
+    "@bloodyfights/bot": "*",
+    "@bloodyfights/motore": "*",
+    "@bloodyfights/pixel": "*"
+  }
+}

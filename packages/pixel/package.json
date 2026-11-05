@@ -1,0 +1,13 @@
+{
+  "name": "@bloodyfights/pixel",
+  "version": "0.1.0",
+  "description": "Palette fissa, formato di salvataggio a 4 bit per pixel e segnaposto generati",
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@bloodyfights/motore": "*"
+  },
+  "scripts": {
+    "test": "node --test --experimental-strip-types test/*.test.ts"
+  }
+}

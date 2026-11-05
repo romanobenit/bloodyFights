@@ -1,0 +1,1589 @@
+/*
+ * IDENTITA' VISIVA (cap. 2 delle specifiche).
+ * Due colori e un solo linguaggio grafico. Niente angoli arrotondati, niente
+ * sfumature, niente blur: le ombre sono blocchi solidi spostati di 4 pixel.
+ *
+ * La palette sta qui una volta sola, come l'avrebbe tenuta la configurazione
+ * di Tailwind. Gli stessi valori vivono anche in packages/pixel/src/palette.ts,
+ * perche' li' sono indici di disegno e non colori di interfaccia.
+ */
+:root {
+  --fondo: #0a0a0a;
+  --pannello: #151515;
+  --accento: #d81e2c;
+  --accento-chiaro: #ff3b47;
+  --accento-scuro: #6e0d15;
+  --testo: #e9e5df;
+  --testo-secondario: #8e8882;
+  --trama: #1c1c1c;
+  --trama-fitta: #121212;
+  --bordo: #2a2a2a;
+
+  --latte: #f2efe4;
+  --veleno: #6fa82a;
+  --acqua: #2e6fa8;
+  --fuoco: #e8701a;
+  --petrolio: #2b2440;
+  --sangue: #8e1220;
+
+  /* Proporzioni 2,5 x 3,5. Lo sprite dentro e' sempre a multipli interi di
+     32 px, altrimenti i pixel si sfocano e lo stile va a farsi benedire. */
+  --slot-larghezza: 96px;
+  --slot-altezza: 134px;
+  --mano-larghezza: 128px;
+  --mano-altezza: 179px;
+
+  --pixel: 'Press Start 2P', 'Silkscreen', monospace;
+  --prosa: ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  border-radius: 0 !important;
+}
+
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--testo);
+  font-family: var(--prosa);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+img {
+  image-rendering: pixelated;
+  display: block;
+}
+
+/* --- impaginazione ------------------------------------------------------- */
+
+/*
+ * Colonna, non riga.
+ *
+ * Con `display: flex` e la direzione predefinita, la barra di navigazione e
+ * il tabellone diventano due elementi AFFIANCATI: il menu finiva a sinistra
+ * del campo invece che sopra. La direzione va dichiarata.
+ */
+#radice {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+}
+
+/*
+ * Il tetto di larghezza vale per la colonna di contenuto, NON per le
+ * sovrapposizioni a schermo intero: una `position: fixed` con un max-width
+ * addosso smette di coprire la finestra e si ferma a 1100px.
+ */
+#radice > *:not(.esito) {
+  width: 100%;
+  max-width: 1100px;
+}
+
+/*
+ * Trama di fondo: una griglia di punti su due passi diversi, a colori pieni e
+ * senza sfumature. Da' profondita' alla pagina senza aggiungere un solo
+ * elemento, e resta nel linguaggio del pixel: nessun gradiente morbido.
+ */
+body {
+  background-color: var(--fondo);
+  background-image:
+    radial-gradient(var(--trama) 1px, transparent 1px),
+    radial-gradient(var(--trama-fitta) 1px, transparent 1px);
+  background-size: 32px 32px, 8px 8px;
+  background-position: 0 0, 0 0;
+}
+
+.partita {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 272px;
+  gap: 16px;
+  width: 100%;
+}
+
+.colonna-gioco {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fianco {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* --- pannelli ------------------------------------------------------------ */
+
+.pannello {
+  background: var(--pannello);
+  border: 2px solid var(--accento-scuro);
+  box-shadow: 4px 4px 0 var(--accento-scuro);
+  padding: 10px;
+}
+
+.pannello > h2 {
+  font-family: var(--pixel);
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--accento);
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+/* --- testata del giocatore ---------------------------------------------- */
+
+.testata {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--pannello);
+  border: 2px solid var(--accento-scuro);
+  padding: 6px 10px;
+}
+
+.testata.mio {
+  border-color: var(--accento);
+}
+
+.testata .nome {
+  font-family: var(--pixel);
+  font-size: 10px;
+  color: var(--testo);
+}
+
+.misure {
+  display: flex;
+  gap: 14px;
+  font-family: var(--pixel);
+  font-size: 11px;
+}
+
+.misura .etichetta {
+  font-family: var(--prosa);
+  font-size: 10px;
+  color: var(--testo-secondario);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-right: 4px;
+}
+
+.vita {
+  color: var(--accento-chiaro);
+}
+
+.gocce {
+  color: var(--latte);
+}
+
+/* --- tabellone ---------------------------------------------------------- */
+
+.tabellone {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--pannello);
+  border: 2px solid var(--accento-scuro);
+  box-shadow: 4px 4px 0 var(--accento-scuro);
+  padding: 10px;
+}
+
+.linea {
+  display: grid;
+  grid-template-columns: 92px repeat(4, var(--slot-larghezza));
+  gap: 8px;
+  align-items: center;
+}
+
+.linea .nome-linea {
+  font-family: var(--prosa);
+  font-size: 10px;
+  color: var(--testo-secondario);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-align: right;
+  padding-right: 4px;
+  line-height: 1.3;
+}
+
+.separatore {
+  height: 2px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--accento) 0 8px,
+    transparent 8px 16px
+  );
+  margin: 4px 0;
+}
+
+.slot {
+  width: var(--slot-larghezza);
+  height: var(--slot-altezza);
+  border: 2px solid #2a2a2a;
+  background: #0d0d0d;
+  position: relative;
+  padding: 0;
+  cursor: default;
+  font: inherit;
+  color: inherit;
+  overflow: hidden;
+}
+
+.slot .coordinata {
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  font-family: var(--pixel);
+  font-size: 7px;
+  color: #3a3a3a;
+}
+
+.slot.bersagliabile {
+  border-color: var(--accento);
+  cursor: pointer;
+  animation: pulsa 640ms steps(2, end) infinite;
+}
+
+.slot.scelto {
+  border-color: var(--accento-chiaro);
+  outline: 2px solid var(--accento-chiaro);
+  outline-offset: -4px;
+}
+
+@keyframes pulsa {
+  0% { background: #0d0d0d; }
+  50% { background: #1d0407; }
+  100% { background: #0d0d0d; }
+}
+
+/* =========================================================================
+   ANIMAZIONI
+   Tutte a scatti, su 4-8 fotogrammi, con steps() e mai ease (cap. 2).
+   Il movimento interpolato fa sembrare sfocato uno sprite 32x32: a questa
+   risoluzione mezzo pixel non esiste, e fingerlo tradisce lo stile.
+   ========================================================================= */
+
+/* Le caselle animate escono dai propri bordi: niente ritaglio, e passano
+   sopra le vicine mentre si muovono. */
+.slot.appare,
+.slot.arriva,
+.slot.attacca,
+.slot.impatto {
+  overflow: visible;
+  z-index: 2;
+}
+
+/* --- evocazione: la carta si materializza dal centro in 4 fotogrammi --- */
+@keyframes appare {
+  0%   { clip-path: inset(48% 0 48% 0); filter: brightness(3); }
+  25%  { clip-path: inset(30% 0 30% 0); filter: brightness(2.2); }
+  50%  { clip-path: inset(12% 0 12% 0); filter: brightness(1.6); }
+  100% { clip-path: inset(0 0 0 0);     filter: none; }
+}
+
+.slot.appare .carta {
+  animation: appare 340ms steps(4, end) 1;
+}
+
+.slot.appare {
+  animation: pulsa 340ms steps(2, end) 1;
+}
+
+/* --- spostamento: la carta salta dalla casella di partenza ---------------
+   --dcol e --driga arrivano dalla vista come NUMERO di caselle; la misura in
+   pixel si calcola qui, dove la larghezza di una casella e' gia' definita. */
+@keyframes arriva {
+  from {
+    transform: translate(
+      calc(var(--dcol, 0) * (var(--slot-larghezza) + 8px)),
+      calc(var(--driga, 0) * (var(--slot-altezza) + 6px))
+    );
+  }
+  to { transform: translate(0, 0); }
+}
+
+.slot.arriva .carta {
+  animation: arriva 300ms steps(5, end) 1;
+}
+
+/* --- attacco: lo slancio di chi colpisce ------------------------------- */
+@keyframes attacca {
+  0%   { transform: translateY(0); }
+  35%  { transform: translateY(calc(var(--verso, 1) * -16px)); }
+  60%  { transform: translateY(calc(var(--verso, 1) * -16px)); }
+  100% { transform: translateY(0); }
+}
+
+.slot.attacca .carta {
+  animation: attacca 420ms steps(4, end) 1;
+}
+
+/* --- attacco: l'impatto su chi lo subisce ------------------------------ */
+@keyframes impatto {
+  0%   { transform: translateX(3px);  background: var(--accento); }
+  25%  { transform: translateX(-3px); background: var(--accento-chiaro); }
+  50%  { transform: translateX(2px);  background: var(--accento-scuro); }
+  75%  { transform: translateX(-1px); background: var(--accento-scuro); }
+  100% { transform: translateX(0);    background: #0d0d0d; }
+}
+
+.slot.impatto {
+  animation: impatto 360ms steps(5, end) 1 220ms both;
+}
+
+/* --- il danno che sale ------------------------------------------------- */
+@keyframes danno-sale {
+  0%   { transform: translateY(2px); opacity: 1; }
+  100% { transform: translateY(-26px); opacity: 0; }
+}
+
+.danno {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  margin-left: -14px;
+  width: 28px;
+  text-align: center;
+  font-family: var(--pixel);
+  font-size: 11px;
+  color: var(--testo);
+  text-shadow: 2px 2px 0 var(--accento-scuro);
+  pointer-events: none;
+  z-index: 3;
+  animation: danno-sale 820ms steps(7, end) 1 220ms both;
+}
+
+.danno.critico {
+  color: var(--accento-chiaro);
+  font-size: 13px;
+}
+
+/* --- morte: la carta si sfalda dal basso in 4 fotogrammi --------------- */
+@keyframes muore {
+  0%   { clip-path: inset(0 0 0 0);    filter: brightness(2.5); }
+  30%  { clip-path: inset(0 0 25% 0);  filter: brightness(1.8); }
+  60%  { clip-path: inset(0 0 60% 0);  filter: brightness(1.2); }
+  100% { clip-path: inset(0 0 100% 0); filter: none; }
+}
+
+.carta.muore {
+  animation: muore 460ms steps(4, end) 1 300ms both;
+}
+
+/* --- il giocatore colpito in faccia ------------------------------------ */
+@keyframes ferito {
+  0%   { border-color: var(--accento-chiaro); transform: translateX(2px); }
+  33%  { border-color: var(--accento);        transform: translateX(-2px); }
+  66%  { border-color: var(--accento-chiaro); transform: translateX(1px); }
+  100% { border-color: var(--accento-scuro);  transform: translateX(0); }
+}
+
+.testata.ferito {
+  animation: ferito 420ms steps(4, end) 1 220ms both;
+  position: relative;
+}
+
+.testata {
+  position: relative;
+}
+
+/* Chi preferisce non vedere movimento non lo vede: resta tutto leggibile,
+   solo senza spostamenti. */
+@media (prefers-reduced-motion: reduce) {
+  .slot.appare .carta,
+  .slot.arriva .carta,
+  .slot.attacca .carta,
+  .slot.impatto,
+  .slot.bersagliabile,
+  .carta.muore,
+  .testata.ferito,
+  .danno {
+    animation-duration: 1ms;
+    animation-iteration-count: 1;
+  }
+}
+
+/* --- carta in campo ------------------------------------------------------ */
+
+.carta {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px;
+  border-left: 3px solid var(--elemento, var(--accento));
+}
+
+.carta .ritratto {
+  margin-top: 10px;
+}
+
+.carta .nome-carta {
+  font-family: var(--pixel);
+  font-size: 6px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--testo);
+  word-break: break-word;
+}
+
+.carta .stat {
+  display: flex;
+  gap: 6px;
+  font-family: var(--pixel);
+  font-size: 8px;
+  width: 100%;
+  justify-content: center;
+}
+
+.carta.mia {
+  cursor: pointer;
+}
+
+.carta.fresca {
+  opacity: 0.62;
+}
+
+.carta.inattiva {
+  filter: grayscale(0.5);
+}
+
+.bollino {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  font-family: var(--pixel);
+  font-size: 6px;
+  padding: 1px 2px;
+  background: var(--accento-scuro);
+  color: var(--testo);
+}
+
+/* --- mano ---------------------------------------------------------------- */
+
+.mano {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: var(--mano-altezza);
+}
+
+.carta-mano {
+  width: var(--mano-larghezza);
+  height: var(--mano-altezza);
+  background: var(--pannello);
+  border: 2px solid var(--accento-scuro);
+  border-left-width: 4px;
+  border-left-color: var(--elemento, var(--accento));
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  position: relative;
+}
+
+.carta-mano:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.carta-mano.scelta {
+  border-color: var(--accento-chiaro);
+  transform: translateY(-4px);
+  box-shadow: 4px 4px 0 var(--accento);
+}
+
+.carta-mano .nome-carta {
+  font-family: var(--pixel);
+  font-size: 7px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.carta-mano .riga-stat {
+  display: flex;
+  gap: 8px;
+  font-family: var(--pixel);
+  font-size: 9px;
+  margin-top: auto;
+}
+
+.carta-mano .tipo-elemento {
+  font-size: 9px;
+  color: var(--testo-secondario);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.costo {
+  color: var(--accento-chiaro);
+}
+
+/* --- comandi ------------------------------------------------------------- */
+
+.barra-fasi {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.fase {
+  font-family: var(--pixel);
+  font-size: 8px;
+  padding: 5px 7px;
+  border: 2px solid #2a2a2a;
+  color: var(--testo-secondario);
+}
+
+.fase.corrente {
+  border-color: var(--accento);
+  background: var(--accento-scuro);
+  color: var(--testo);
+}
+
+.bottone {
+  font-family: var(--pixel);
+  font-size: 9px;
+  padding: 9px 12px;
+  background: var(--accento);
+  color: var(--fondo);
+  border: 2px solid var(--accento-chiaro);
+  box-shadow: 4px 4px 0 var(--accento-scuro);
+  cursor: pointer;
+}
+
+.bottone:hover:not(:disabled) {
+  background: var(--accento-chiaro);
+}
+
+.bottone:active:not(:disabled) {
+  box-shadow: 0 0 0 var(--accento-scuro);
+  transform: translate(4px, 4px);
+}
+
+.bottone:disabled {
+  background: #2a2a2a;
+  border-color: #3a3a3a;
+  color: var(--testo-secondario);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.bottone.secondario {
+  background: var(--pannello);
+  color: var(--testo);
+  border-color: var(--accento-scuro);
+}
+
+.messaggio {
+  font-size: 13px;
+  color: var(--testo);
+  border-left: 3px solid var(--accento);
+  padding: 6px 10px;
+  background: var(--pannello);
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+}
+
+/* --- registro ------------------------------------------------------------ */
+
+.registro {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 340px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.registro li {
+  color: var(--testo-secondario);
+  border-bottom: 1px solid #1f1f1f;
+  padding-bottom: 3px;
+}
+
+.registro li.mio {
+  color: var(--testo);
+}
+
+.registro li.rilievo {
+  color: var(--accento-chiaro);
+}
+
+/* --- dettaglio della carta ----------------------------------------------- */
+
+.dettaglio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.dettaglio .nome-carta {
+  font-family: var(--pixel);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.dettaglio dl {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 10px;
+  margin: 4px 0 0;
+  font-size: 12px;
+  width: 100%;
+}
+
+.dettaglio dt {
+  color: var(--testo-secondario);
+  text-align: left;
+}
+
+.dettaglio dd {
+  margin: 0;
+  font-family: var(--pixel);
+  font-size: 9px;
+  text-align: right;
+}
+
+/* --- esito -------------------------------------------------------------- */
+
+.esito {
+  position: fixed;
+  inset: 0;
+  /* Dichiarato anche qui: se domani qualcuno allarga di nuovo la regola della
+     colonna, questa sovrapposizione continua a coprire tutto. */
+  width: 100vw;
+  max-width: none;
+  background: rgba(10, 10, 10, 0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  z-index: 10;
+}
+
+.esito h1 {
+  font-family: var(--pixel);
+  font-size: 28px;
+  color: var(--accento);
+  margin: 0;
+  text-shadow: 4px 4px 0 var(--accento-scuro);
+}
+
+.esito p {
+  color: var(--testo-secondario);
+  margin: 0;
+}
+
+.nota {
+  font-size: 11px;
+  color: var(--testo-secondario);
+  line-height: 1.5;
+}
+
+/* =========================================================================
+   PAGINE: navigazione, editor del mazzo, profilo, tutorial
+   ========================================================================= */
+
+.navigazione {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--pannello);
+  border: 2px solid var(--accento-scuro);
+  box-shadow: 4px 4px 0 var(--accento-scuro);
+}
+
+.marchio {
+  font-family: var(--pixel);
+  font-size: 12px;
+  color: var(--testo);
+  margin-right: 16px;
+  letter-spacing: 1px;
+}
+
+.marchio span {
+  color: var(--accento);
+}
+
+.voce {
+  font-family: var(--pixel);
+  font-size: 9px;
+  padding: 8px 10px;
+  color: var(--testo-secondario);
+  text-decoration: none;
+  border: 2px solid transparent;
+}
+
+.voce:hover {
+  color: var(--testo);
+  border-color: var(--accento-scuro);
+}
+
+.voce.corrente {
+  color: var(--testo);
+  background: var(--accento-scuro);
+  border-color: var(--accento);
+}
+
+.pagina {
+  width: 100%;
+}
+
+.pagina.due-colonne {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  align-items: start;
+}
+
+/* --- collezione ---------------------------------------------------------- */
+
+.barra-filtri {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.filtro {
+  font-family: var(--pixel);
+  font-size: 8px;
+  padding: 6px 7px;
+  background: transparent;
+  color: var(--testo-secondario);
+  border: 2px solid #2a2a2a;
+  cursor: pointer;
+}
+
+.filtro:hover:not(:disabled) {
+  color: var(--testo);
+  border-color: var(--accento-scuro);
+}
+
+.filtro.corrente {
+  color: var(--testo);
+  background: var(--accento-scuro);
+  border-color: var(--accento);
+}
+
+.filtro:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.griglia-collezione {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px;
+}
+
+.carta-collezione {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  background: #0d0d0d;
+  border: 2px solid #2a2a2a;
+  border-left: 4px solid var(--elemento, var(--accento));
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.carta-collezione:hover {
+  border-color: var(--accento);
+  border-left-color: var(--elemento, var(--accento));
+}
+
+.carta-collezione.esaurita {
+  opacity: 0.45;
+}
+
+.carta-collezione .nome-carta {
+  font-family: var(--pixel);
+  font-size: 6px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.carta-collezione .riga-stat {
+  display: flex;
+  gap: 6px;
+  font-family: var(--pixel);
+  font-size: 8px;
+}
+
+.possesso {
+  font-size: 10px;
+  color: var(--testo-secondario);
+}
+
+.costo-angolo {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  font-family: var(--pixel);
+  font-size: 9px;
+  color: var(--accento-chiaro);
+}
+
+/* --- colonna del mazzo --------------------------------------------------- */
+
+.colonna-mazzo {
+  position: sticky;
+  top: 16px;
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  color: var(--testo-secondario);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.campo input,
+.campo textarea {
+  font-family: var(--prosa);
+  font-size: 13px;
+  padding: 7px 8px;
+  background: #0d0d0d;
+  color: var(--testo);
+  border: 2px solid #2a2a2a;
+  text-transform: none;
+  letter-spacing: 0;
+  resize: vertical;
+}
+
+.campo input:focus,
+.campo textarea:focus {
+  outline: none;
+  border-color: var(--accento);
+}
+
+.conteggio {
+  font-size: 12px;
+  color: var(--testo-secondario);
+  margin-bottom: 8px;
+}
+
+.conteggio .numero {
+  font-family: var(--pixel);
+  font-size: 14px;
+  color: var(--testo);
+}
+
+.conteggio.completo .numero {
+  color: var(--accento-chiaro);
+}
+
+.barra-riempimento {
+  display: block;
+  height: 6px;
+  margin-top: 5px;
+  background: #0d0d0d;
+  border: 2px solid #2a2a2a;
+}
+
+.barra-riempimento span {
+  display: block;
+  height: 100%;
+  background: var(--accento);
+}
+
+.conteggio.completo .barra-riempimento span {
+  background: var(--accento-chiaro);
+}
+
+/* --- curva dei costi ----------------------------------------------------- */
+
+.curva {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 72px;
+  margin-bottom: 12px;
+  padding: 6px;
+  background: #0d0d0d;
+  border: 2px solid #2a2a2a;
+}
+
+.colonna-curva {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  gap: 2px;
+}
+
+.colonna-curva .barra {
+  width: 100%;
+  min-height: 2px;
+  background: var(--accento-scuro);
+  border-top: 2px solid var(--accento);
+}
+
+.colonna-curva .quanto,
+.colonna-curva .costo {
+  font-family: var(--pixel);
+  font-size: 7px;
+  color: var(--testo-secondario);
+}
+
+.colonna-curva .quanto {
+  color: var(--testo);
+  min-height: 9px;
+}
+
+/* --- lista del mazzo ----------------------------------------------------- */
+
+.lista-mazzo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+
+.voce-mazzo {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 22px 3px 4px;
+  background: #0d0d0d;
+  border: 2px solid #2a2a2a;
+  border-left: 4px solid var(--elemento, var(--accento));
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.voce-mazzo:hover {
+  border-color: var(--accento);
+}
+
+.voce-mazzo .nome-carta {
+  font-size: 12px;
+}
+
+.voce-mazzo .quante {
+  font-family: var(--pixel);
+  font-size: 9px;
+  color: var(--testo-secondario);
+}
+
+.esito-mazzo {
+  font-size: 12px;
+  padding: 7px 9px;
+  margin: 0 0 10px;
+  border-left: 3px solid var(--accento);
+  background: #0d0d0d;
+}
+
+.esito-mazzo.valido {
+  color: var(--testo);
+  border-left-color: var(--accento-chiaro);
+}
+
+.esito-mazzo.non-valido {
+  color: var(--testo-secondario);
+  list-style: none;
+  padding-left: 12px;
+}
+
+/* --- profilo ------------------------------------------------------------- */
+
+.statistiche {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 14px;
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+
+.statistiche dt {
+  color: var(--testo-secondario);
+}
+
+.statistiche dd {
+  margin: 0;
+  font-family: var(--pixel);
+  font-size: 11px;
+  text-align: right;
+}
+
+/* --- tutorial ------------------------------------------------------------ */
+
+.prosa {
+  margin-bottom: 16px;
+  line-height: 1.65;
+}
+
+.prosa h2 {
+  margin-top: 0;
+}
+
+.prosa h3 {
+  font-family: var(--pixel);
+  font-size: 10px;
+  color: var(--accento-chiaro);
+  margin: 20px 0 6px;
+}
+
+.prosa p {
+  margin: 0 0 12px;
+  max-width: 68ch;
+}
+
+.catena {
+  font-family: var(--pixel);
+  font-size: 10px;
+  color: var(--accento-chiaro);
+  padding: 10px;
+  background: #0d0d0d;
+  border-left: 3px solid var(--accento);
+}
+
+.schema {
+  margin: 0 0 16px;
+  padding: 10px;
+  background: #0d0d0d;
+  border: 2px solid #2a2a2a;
+  max-width: 460px;
+}
+
+.schema figcaption {
+  font-size: 11px;
+  color: var(--testo-secondario);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.riga-schema {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.riga-schema .cella {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--testo-secondario);
+  background: #111;
+  border: 2px solid #242424;
+}
+
+.riga-schema .cella.piena {
+  color: var(--testo);
+  border-color: var(--accento-scuro);
+  background: #170406;
+}
+
+a.bottone {
+  display: inline-block;
+  text-decoration: none;
+}
+
+@media (max-width: 900px) {
+  .pagina.due-colonne,
+  .partita {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .colonna-mazzo {
+    position: static;
+  }
+}
+
+/* =========================================================================
+   CARATTERE VISIVO
+   Due colori e bordi netti restano la regola: qui si aggiunge gerarchia,
+   non decorazione. Niente sfumature, niente angoli arrotondati, niente blur.
+   ========================================================================= */
+
+/* --- marchio: il nome del gioco va trattato come un'insegna ------------- */
+
+.marchio {
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px 10px 6px;
+  color: var(--testo);
+  background: var(--fondo);
+  border: 2px solid var(--accento);
+  box-shadow: 3px 3px 0 var(--accento-scuro);
+  margin-right: 18px;
+}
+
+.navigazione {
+  box-shadow: 4px 4px 0 var(--accento-scuro), inset 0 -2px 0 var(--accento-scuro);
+}
+
+/* --- pannelli: un segno d'angolo invece di una cornice piatta ----------- */
+
+.pannello,
+.tabellone {
+  position: relative;
+}
+
+.pannello::before,
+.tabellone::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 10px;
+  height: 10px;
+  border-top: 2px solid var(--accento);
+  border-left: 2px solid var(--accento);
+  pointer-events: none;
+}
+
+.pannello::after,
+.tabellone::after {
+  content: '';
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid var(--accento);
+  border-bottom: 2px solid var(--accento);
+  pointer-events: none;
+}
+
+.pannello > h2 {
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--bordo);
+}
+
+/* --- testate: la vita come barra, le gocce come pastiglie -------------- */
+
+.testata {
+  padding: 8px 12px;
+  background: var(--pannello);
+  border: 2px solid var(--bordo);
+  border-left-width: 6px;
+  border-left-color: var(--bordo);
+}
+
+.testata.mio {
+  border-left-color: var(--accento);
+}
+
+.testata.suo {
+  border-left-color: var(--accento-scuro);
+}
+
+.testata.di-turno {
+  border-color: var(--accento);
+  border-left-color: var(--accento-chiaro);
+  box-shadow: 0 0 0 2px var(--accento-scuro);
+}
+
+.identita {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.marca-turno {
+  font-family: var(--prosa);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--fondo);
+  background: var(--accento);
+  padding: 2px 6px;
+}
+
+.misure {
+  align-items: center;
+  gap: 18px;
+}
+
+.misura-vita,
+.misura-gocce {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.numero-grosso {
+  font-family: var(--pixel);
+  font-size: 12px;
+  color: var(--testo);
+  min-width: 18px;
+  text-align: right;
+}
+
+.barra-vita {
+  display: block;
+  width: 132px;
+  height: 12px;
+  background: #0d0d0d;
+  border: 2px solid var(--bordo);
+  /* Tacche ogni due punti vita: si conta a colpo d'occhio quanto manca. */
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 12px,
+    var(--bordo) 12px 14px
+  );
+}
+
+.barra-vita > span {
+  display: block;
+  height: 100%;
+  background: var(--accento);
+}
+
+.misura-vita.agonia .barra-vita > span {
+  background: var(--accento-chiaro);
+  animation: pulsa-vita 900ms steps(2, end) infinite;
+}
+
+.misura-vita.agonia .numero-grosso {
+  color: var(--accento-chiaro);
+}
+
+@keyframes pulsa-vita {
+  0% { background: var(--accento-chiaro); }
+  50% { background: var(--accento-scuro); }
+  100% { background: var(--accento-chiaro); }
+}
+
+.pastiglie {
+  display: flex;
+  gap: 2px;
+}
+
+.pastiglia {
+  width: 8px;
+  height: 12px;
+  background: #0d0d0d;
+  border: 2px solid var(--bordo);
+}
+
+.pastiglia.piena {
+  background: var(--accento);
+  border-color: var(--accento-chiaro);
+}
+
+/* --- tabellone: i due schieramenti vanno distinti a vista -------------- */
+
+.tabellone {
+  padding: 12px;
+  gap: 8px;
+}
+
+.linea .nome-linea {
+  font-size: 9px;
+}
+
+.separatore {
+  height: 0;
+  margin: 10px 0;
+  border-top: 2px dashed var(--accento-scuro);
+  position: relative;
+  background: none;
+}
+
+.separatore::after {
+  content: 'FRONTE';
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 10px;
+  background: var(--pannello);
+  font-family: var(--pixel);
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--accento-scuro);
+}
+
+.slot {
+  border-color: var(--bordo);
+  transition: none;
+}
+
+.slot:hover .carta.mia {
+  border-left-width: 5px;
+}
+
+/* --- barra delle fasi: la fase corrente deve saltare all'occhio -------- */
+
+.fase {
+  position: relative;
+  border-color: var(--bordo);
+}
+
+.fase.corrente::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -8px;
+  margin-left: -4px;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--accento);
+}
+
+.barra-fasi {
+  padding: 2px 0 8px;
+}
+
+/* --- mano: le carte si sollevano quando le punti ----------------------- */
+
+.carta-mano {
+  box-shadow: 3px 3px 0 #0d0d0d;
+}
+
+.carta-mano:hover:not(:disabled) {
+  border-color: var(--accento);
+  box-shadow: 4px 4px 0 var(--accento-scuro);
+}
+
+.carta-mano.scelta {
+  box-shadow: 5px 5px 0 var(--accento);
+}
+
+/* --- registro: le voci importanti hanno un segno ----------------------- */
+
+.registro li.rilievo {
+  border-left: 3px solid var(--accento);
+  padding-left: 6px;
+}
+
+/* --- esito: schermata finale piu' netta -------------------------------- */
+
+.esito h1 {
+  font-size: 32px;
+  padding: 16px 28px;
+  border: 4px solid var(--accento);
+  background: var(--fondo);
+  box-shadow: 8px 8px 0 var(--accento-scuro);
+}
+
+/* =========================================================================
+   EDITOR DI CARTE
+   ========================================================================= */
+
+.area-tela {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: #0d0d0d;
+  border: 2px solid var(--bordo);
+}
+
+/*
+ * La tela e' 32x32 pixel veri, mostrata a x12 esatti: 384 px. Un fattore
+ * intero e' obbligatorio, a 3,5x i pixel si sfocano e lo stile salta.
+ * La griglia sopra e' disegnata con due gradienti a tinta piena, non con
+ * 1024 elementi.
+ */
+.tela {
+  width: 384px;
+  height: 384px;
+  image-rendering: pixelated;
+  cursor: crosshair;
+  touch-action: none;
+  background-color: var(--pannello);
+  background-image:
+    repeating-linear-gradient(90deg, var(--trama) 0 1px, transparent 1px 12px),
+    repeating-linear-gradient(0deg, var(--trama) 0 1px, transparent 1px 12px);
+  border: 2px solid var(--bordo);
+}
+
+.tavolozza {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.colore {
+  height: 28px;
+  border: 2px solid var(--bordo);
+  cursor: pointer;
+  padding: 0;
+}
+
+.colore:hover {
+  border-color: var(--testo-secondario);
+}
+
+.colore.corrente {
+  border-color: var(--accento-chiaro);
+  box-shadow: inset 0 0 0 2px var(--fondo);
+}
+
+/* --- selettori numerici -------------------------------------------------- */
+
+.selettore {
+  margin-bottom: 10px;
+}
+
+.selettore .etichetta {
+  display: block;
+  font-size: 11px;
+  color: var(--testo-secondario);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+
+.tacche {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+.tacca {
+  flex: 1;
+  min-width: 26px;
+  padding: 7px 0;
+  font-family: var(--pixel);
+  font-size: 9px;
+  background: #0d0d0d;
+  color: var(--testo-secondario);
+  border: 2px solid var(--bordo);
+  cursor: pointer;
+}
+
+.tacca:hover:not(:disabled) {
+  color: var(--testo);
+  border-color: var(--accento-scuro);
+}
+
+.tacca.corrente {
+  background: var(--accento);
+  color: var(--fondo);
+  border-color: var(--accento-chiaro);
+}
+
+.tacca:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+}
+
+.filtro.elemento.corrente {
+  background: var(--elemento);
+  border-color: var(--testo);
+  color: var(--fondo);
+}
+
+/* --- barra di potenza ---------------------------------------------------- */
+
+.potenza {
+  margin: 14px 0;
+  padding: 10px;
+  background: #0d0d0d;
+  border: 2px solid var(--bordo);
+}
+
+.barra-riempimento.verde span { background: var(--veleno); }
+.barra-riempimento.gialla span { background: var(--fuoco); }
+.barra-riempimento.rossa span { background: var(--accento-chiaro); }
+
+.scomposizione {
+  list-style: none;
+  margin: 10px 0 8px;
+  padding: 0;
+  font-size: 12px;
+}
+
+.scomposizione li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--trama);
+  color: var(--testo-secondario);
+}
+
+.scomposizione em {
+  font-style: normal;
+  color: var(--accento-scuro);
+}
+
+/* --- anteprima della carta ----------------------------------------------- */
+
+.anteprima-carta {
+  position: relative;
+  width: 192px;
+  margin: 0 auto 12px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  background: var(--pannello);
+  border: 2px solid var(--accento-scuro);
+  border-left: 5px solid var(--elemento, var(--accento));
+  box-shadow: 4px 4px 0 var(--accento-scuro);
+}
+
+.ritratto-grande {
+  width: 128px;
+  height: 128px;
+  image-rendering: pixelated;
+}
+
+.anteprima-carta .nome-carta {
+  font-family: var(--pixel);
+  font-size: 8px;
+  line-height: 1.5;
+  text-align: center;
+  margin: 0;
+}
+
+.anteprima-carta .riga-stat {
+  display: flex;
+  gap: 12px;
+  font-family: var(--pixel);
+  font-size: 11px;
+}

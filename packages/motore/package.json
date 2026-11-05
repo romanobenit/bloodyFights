@@ -1,0 +1,13 @@
+{
+  "name": "@bloodyfights/motore",
+  "version": "0.1.0",
+  "description": "Motore di gioco puro: nessuna dipendenza da React, database o rete",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "node --test --experimental-strip-types test/*.test.ts"
+  },
+  "devDependencies": {
+    "@bloodyfights/bot": "*"
+  }
+}
