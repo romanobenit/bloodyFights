@@ -5,10 +5,10 @@
   "type": "module",
   "description": "Tabellone giocabile della fase 1, senza dipendenze",
   "scripts": {
-    "build": "node strumenti/compila.mjs",
-    "dev": "node strumenti/servi.mjs",
-    "preview": "node strumenti/servi.mjs --senza-watch",
-    "test": "node --test --experimental-strip-types test/*.test.ts"
+    "build": "node --experimental-strip-types --disable-warning=ExperimentalWarning strumenti/compila.mjs",
+    "dev": "node --experimental-strip-types --disable-warning=ExperimentalWarning strumenti/servi.mjs",
+    "preview": "node --experimental-strip-types --disable-warning=ExperimentalWarning strumenti/servi.mjs --senza-watch",
+    "test": "node --test --experimental-strip-types --disable-warning=ExperimentalWarning test/*.test.ts"
   },
   "dependencies": {
     "@bloodyfights/bot": "*",

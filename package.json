@@ -11,8 +11,8 @@
     "test": "npm test --workspace @bloodyfights/motore && npm test --workspace @bloodyfights/pixel && npm test --workspace @bloodyfights/server && npm test --workspace @bloodyfights/web",
     "dev": "npm run dev --workspace @bloodyfights/web",
     "build": "npm run build --workspace @bloodyfights/web",
-    "anteprima": "node apps/web/strumenti/anteprima.mjs",
-    "simula": "node packages/motore/scripts/simula.ts",
+    "anteprima": "node --experimental-strip-types --disable-warning=ExperimentalWarning apps/web/strumenti/anteprima.mjs",
+    "simula": "node --experimental-strip-types --disable-warning=ExperimentalWarning packages/motore/scripts/simula.ts",
     "server": "npm run avvia --workspace @bloodyfights/server"
   },
   "engines": {
