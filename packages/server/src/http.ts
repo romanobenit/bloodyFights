@@ -22,10 +22,28 @@ export interface Richiesta {
   origine: string | null;
 }
 
+/**
+ * Un flusso di eventi (SSE): la risposta non si chiude, il server continua a
+ * scriverci dentro. Il documento prevede WebSocket; qui serve il tempo reale
+ * in una direzione sola - server verso client - e per quello basta HTTP
+ * normale, che passa dai proxy senza cerimonie e si riapre da solo.
+ *
+ * `avvia` riceve la funzione per mandare un evento e quella per chiudere, e
+ * restituisce la pulizia da eseguire quando il client se ne va.
+ */
+export interface Flusso {
+  avvia(
+    invia: (evento: string, dati: unknown) => void,
+    chiudi: () => void,
+  ): () => void;
+}
+
 export interface Risposta {
   stato: number;
   corpo?: unknown;
   intestazioni?: Record<string, string>;
+  /** Se c'e', la risposta resta aperta e il corpo viene ignorato. */
+  flusso?: Flusso;
 }
 
 export type Gestore = (richiesta: Richiesta) => Promise<Risposta> | Risposta;
@@ -142,6 +160,11 @@ export function creaServer(opzioni: OpzioniServer): Server {
         origine,
       });
 
+      if (esito.flusso) {
+        apriFlusso(risposta, esito.flusso, intestazioniBase, esito.intestazioni);
+        return;
+      }
+
       risposta
         .writeHead(esito.stato, { ...intestazioniBase, ...esito.intestazioni })
         .end(esito.corpo === undefined ? '' : JSON.stringify(esito.corpo));
@@ -155,4 +178,57 @@ export function creaServer(opzioni: OpzioniServer): Server {
       risposta.writeHead(stato, intestazioniBase).end(JSON.stringify({ errore: messaggio }));
     }
   });
+}
+
+
+/** Tiene aperta la risposta e ci scrive eventi finche' il client resta. */
+function apriFlusso(
+  risposta: ServerResponse,
+  flusso: Flusso,
+  intestazioniBase: Record<string, string>,
+  extra: Record<string, string> | undefined,
+): void {
+  risposta.writeHead(200, {
+    ...intestazioniBase,
+    ...extra,
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    // Alcuni proxy accumulano le risposte: cosi' gli eventi partono subito.
+    'X-Accel-Buffering': 'no',
+  });
+
+  let aperto = true;
+  let pulisci: (() => void) | null = null;
+
+  const chiudi = () => {
+    if (!aperto) return;
+    aperto = false;
+    // Prima la pulizia, poi la chiusura: altrimenti l'arena resta con un
+    // ascoltatore che scrive su una risposta morta.
+    try {
+      pulisci?.();
+    } finally {
+      risposta.end();
+    }
+  };
+
+  const invia = (evento: string, dati: unknown) => {
+    if (!aperto) return;
+    risposta.write(`event: ${evento}\ndata: ${JSON.stringify(dati)}\n\n`);
+  };
+
+  risposta.on('close', () => {
+    aperto = false;
+    pulisci?.();
+  });
+
+  pulisci = flusso.avvia(invia, chiudi);
+  // Un commento ogni venti secondi: tiene vivo il collegamento quando non
+  // succede niente, e fa accorgere il server se il client e' sparito.
+  const battito = setInterval(() => {
+    if (aperto) risposta.write(': battito\n\n');
+  }, 20_000);
+  battito.unref?.();
+  risposta.on('close', () => clearInterval(battito));
 }

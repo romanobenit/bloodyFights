@@ -41,6 +41,39 @@ export class ErroreServer extends Error {
   }
 }
 
+/** Esito di una partita online, come lo manda il server. */
+export interface EsitoRemoto {
+  vincitoreId: string | null;
+  motivo: 'regole' | 'tempo' | 'abbandono';
+  mmr: Record<string, number>;
+}
+
+/**
+ * La partita vista da un giocatore. Lo `stato` ha la forma di quello del
+ * motore, ma le carte che non si devono vedere sono segnaposto: il server le
+ * copre prima di spedirlo.
+ */
+export interface PartitaRemota {
+  partitaId: string;
+  io: 0 | 1;
+  avversario: string;
+  stato: unknown;
+  scadeIl: number;
+  esito: EsitoRemoto | null;
+}
+
+export interface StatoCoda {
+  utenteId: string;
+  mmr: number;
+  da: number;
+}
+
+/** Un evento che arriva dal flusso. */
+export interface AvvisoRemoto {
+  tipo: 'inCoda' | 'partitaTrovata' | 'stato' | 'finita';
+  partita: PartitaRemota | null;
+}
+
 export interface Cliente {
   base: string;
   salute(): Promise<boolean>;
@@ -48,6 +81,17 @@ export interface Cliente {
   accesso(email: string, password: string): Promise<EsitoAccesso>;
   uscita(token: string): Promise<void>;
   io(token: string): Promise<UtenteRemoto>;
+
+  entraInCoda(token: string, mazzo: readonly string[]): Promise<{ inCoda: boolean; partita: PartitaRemota | null }>;
+  esciDallaCoda(token: string): Promise<void>;
+  leggiPartita(token: string): Promise<{ partita: PartitaRemota | null; inCoda: StatoCoda | null }>;
+  agisci(token: string, azione: unknown): Promise<PartitaRemota>;
+  abbandona(token: string): Promise<PartitaRemota | null>;
+  /**
+   * Apre il flusso degli eventi e chiama `quando` a ogni novita'.
+   * Restituisce la funzione per chiuderlo.
+   */
+  apriFlusso(token: string, quando: (avviso: AvvisoRemoto) => void): () => void;
 }
 
 /** Oltre questo tempo si considera il server assente invece di restare appesi. */
@@ -121,6 +165,86 @@ export function creaCliente(base: string, recupera: Recupero = globalThis.fetch)
     uscita: (token) => chiama<void>('/identita/uscita', { metodo: 'POST', token }),
 
     io: (token) => chiama<{ utente: UtenteRemoto }>('/identita/io', { token }).then((r) => r.utente),
+
+    entraInCoda: (token, mazzo) =>
+      chiama('/online/coda', { metodo: 'POST', token, corpo: { mazzo: [...mazzo] } }),
+
+    esciDallaCoda: (token) => chiama<void>('/online/coda', { metodo: 'DELETE', token }),
+
+    leggiPartita: (token) => chiama('/online/partita', { token }),
+
+    agisci: (token, azione) =>
+      chiama<{ partita: PartitaRemota }>('/online/partita/azione', {
+        metodo: 'POST', token, corpo: { azione },
+      }).then((r) => r.partita),
+
+    abbandona: (token) =>
+      chiama<{ partita: PartitaRemota | null }>('/online/partita/abbandono', {
+        metodo: 'POST', token,
+      }).then((r) => r.partita),
+
+    apriFlusso(token, quando) {
+      // Non si usa EventSource: non sa mandare intestazioni, e il token
+      // finirebbe nell'indirizzo - quindi nei registri dei proxy e nella
+      // cronologia. Con fetch il token resta dov'e' giusto che stia, e il
+      // corpo si legge a pezzi mentre arriva.
+      const annulla = new AbortController();
+      let vivo = true;
+      let riprova: ReturnType<typeof setTimeout> | null = null;
+
+      const leggi = async () => {
+        const risposta = await recupera(indirizzo + '/online/flusso', {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: annulla.signal,
+        });
+        if (!risposta.ok || !risposta.body) throw new ErroreServer('Flusso rifiutato', risposta.status);
+
+        const lettore = risposta.body.getReader();
+        const decodifica = new TextDecoder();
+        let avanzo = '';
+
+        for (;;) {
+          const { done, value } = await lettore.read();
+          if (done) break;
+          avanzo += decodifica.decode(value, { stream: true });
+          // Gli eventi SSE sono separati da una riga vuota. L'ultimo pezzo
+          // puo' essere a meta': resta nell'avanzo e aspetta il resto.
+          const pezzi = avanzo.split('\n\n');
+          avanzo = pezzi.pop() ?? '';
+          for (const pezzo of pezzi) {
+            const dati = /^data: (.+)$/m.exec(pezzo)?.[1];
+            if (!dati) continue;
+            try {
+              const letto = JSON.parse(dati) as { avviso?: { tipo?: string }; partita?: PartitaRemota | null };
+              const tipo = letto.avviso?.tipo;
+              if (tipo) quando({ tipo: tipo as AvvisoRemoto['tipo'], partita: letto.partita ?? null });
+            } catch {
+              // Un evento illeggibile si salta: il prossimo porta lo stato
+              // aggiornato comunque.
+            }
+          }
+        }
+      };
+
+      const insisti = () => {
+        if (!vivo) return;
+        leggi()
+          .catch(() => undefined)
+          .then(() => {
+            // Il flusso cade sempre, prima o poi: proxy, sospensione del
+            // portatile, rete che salta. Si riapre, con una pausa per non
+            // martellare un server spento.
+            if (vivo) riprova = setTimeout(insisti, 2000);
+          });
+      };
+      insisti();
+
+      return () => {
+        vivo = false;
+        if (riprova) clearTimeout(riprova);
+        annulla.abort();
+      };
+    },
   };
 }
 

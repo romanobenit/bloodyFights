@@ -29,8 +29,12 @@ import {
 } from './moderazione.ts';
 import {
   ErroreServer, creaCliente, indirizzoServerPredefinito,
-  type UtenteRemoto,
+  type AvvisoRemoto, type PartitaRemota, type StatoCoda, type UtenteRemoto,
 } from './cliente.ts';
+import {
+  paginaOnline, riassuntoEsito, secondiAlTurno,
+  type ContestoOnline, type StatoOnline,
+} from './online.ts';
 import {
   etichettaAccesso, moduloVuoto, paginaAccesso,
   type ContestoAccesso, type ModoAccesso, type ModuloAccesso, type StatoServer,
@@ -46,6 +50,7 @@ import {
 } from './pagine.ts';
 import {
   aggiungiAlMazzo,
+  erroriMazzo,
   mazzoAttivo,
   mazzoComeLista,
   mazzoGiocabile,
@@ -184,6 +189,19 @@ let modulo: ModuloAccesso = moduloVuoto();
 let erroreAccesso = '';
 let accessoInCorso = false;
 
+// ------------------------------------------------------- partite online
+
+/** La partita online in corso, come la manda il server. Null = nessuna. */
+let partitaOnline: PartitaRemota | null = null;
+/** Da quando si aspetta un avversario, in millisecondi, o null se non si aspetta. */
+let inCodaDa: number | null = null;
+let erroreOnline = '';
+let messaggioOnline = '';
+/** Chiude il flusso degli eventi. Null quando non e' aperto. */
+let chiudiFlusso: (() => void) | null = null;
+/** Ridisegna ogni secondo: serve al contasecondi del turno e al tempo in coda. */
+let battitoOnline: ReturnType<typeof setInterval> | null = null;
+
 function token(): string | null {
   return deposito.leggi<string>(CHIAVE_TOKEN);
 }
@@ -212,6 +230,14 @@ async function risvegliaSessione(): Promise<void> {
         deposito.scrivi(CHIAVE_TOKEN, null);
       }
     }
+  }
+
+  if (utenteRemoto) {
+    // Il flusso si apre appena si sa chi siamo: cosi' una partita trovata
+    // arriva anche a chi sta guardando un'altra pagina, e una partita
+    // interrotta dal ricaricamento della pagina riprende da dove era.
+    apriFlussoOnline();
+    if (pagina === 'online') avviaBattitoOnline();
   }
   rendi();
 }
@@ -302,6 +328,155 @@ function messaggioDiFase(): string {
   }
 }
 
+// ------------------------------------------------- la macchina dell online
+
+/**
+ * Gli errori del mazzo attivo. Online il mazzo non si puo' rimpiazzare con
+ * quello base alle spalle del giocatore, come si fa contro il bot: una
+ * partita classificata si gioca col mazzo che si e' scelto, quindi se non e'
+ * valido si dice e non si entra in coda.
+ */
+function erroriMazzoAttivo(): string[] {
+  const mio = mazzoAttivo(profilo);
+  if (!mio) return ['Nessun mazzo attivo.'];
+  return erroriMazzo(profilo, mio, catalogo());
+}
+
+/** Che cosa mostrare nella pagina Online, in questo momento. */
+function statoOnlineCorrente(): StatoOnline {
+  if (!cliente.base || statoServer === 'assente') return { tipo: 'senzaServer' };
+  if (!utenteRemoto || !token()) return { tipo: 'senzaConto' };
+  if (partitaOnline) return { tipo: 'inPartita', partita: partitaOnline };
+  if (erroreOnline) return { tipo: 'errore', messaggio: erroreOnline };
+  if (inCodaDa !== null) return { tipo: 'inCoda', da: inCodaDa };
+  return { tipo: 'fermo' };
+}
+
+/**
+ * Il flusso degli eventi resta aperto finche' si e' collegati, non solo
+ * mentre si guarda la pagina Online: e' anche la PRESENZA al tavolo. Se si
+ * chiudesse cambiando pagina, il server darebbe la partita per abbandonata
+ * dopo mezzo minuto.
+ */
+function apriFlussoOnline(): void {
+  const tok = token();
+  if (chiudiFlusso || !tok || !utenteRemoto || !cliente.base) return;
+
+  chiudiFlusso = cliente.apriFlusso(tok, (avviso: AvvisoRemoto) => {
+    partitaOnline = avviso.partita;
+    if (avviso.tipo === 'inCoda') inCodaDa = Date.now();
+    if (avviso.tipo === 'partitaTrovata') {
+      inCodaDa = null;
+      messaggioOnline = 'Avversario trovato.';
+      // La partita e' iniziata: se si stava altrove, si va a giocarla.
+      if (pagina !== 'online') vaiA('online');
+    }
+    if (avviso.partita) inCodaDa = null;
+    if (avviso.tipo === 'finita' && avviso.partita && utenteRemoto) {
+      messaggioOnline = riassuntoEsito(avviso.partita, utenteRemoto.id);
+    }
+    selezione = null;
+    rendi();
+  });
+}
+
+function chiudiFlussoOnline(): void {
+  chiudiFlusso?.();
+  chiudiFlusso = null;
+  partitaOnline = null;
+  inCodaDa = null;
+}
+
+/** Manda una mossa al server e prende per buono lo stato che torna. */
+function inviaAlServer(azione: Azione): void {
+  const tok = token();
+  if (!tok || !partitaOnline) return;
+
+  cliente
+    .agisci(tok, azione)
+    .then((partita) => {
+      partitaOnline = partita;
+      selezione = null;
+      messaggio = '';
+      rendi();
+    })
+    .catch((errore) => {
+      // Il server ha l'ultima parola: se rifiuta, si dice perche' e si
+      // lascia il tabellone com'era. Niente da annullare, perche' niente e'
+      // stato applicato qui.
+      messaggio = errore instanceof Error ? errore.message : 'Mossa rifiutata.';
+      selezione = null;
+      rendi();
+    });
+}
+
+function cercaPartita(): void {
+  const tok = token();
+  if (!tok) return;
+  const errori = erroriMazzoAttivo();
+  if (errori.length > 0) {
+    erroreOnline = `Il mazzo non e' valido: ${errori[0]}`;
+    rendi();
+    return;
+  }
+  erroreOnline = '';
+  messaggioOnline = '';
+  inCodaDa = Date.now();
+  rendi();
+
+  cliente
+    .entraInCoda(tok, mazzoComeLista(mazzoAttivo(profilo)!))
+    .then((esito) => {
+      partitaOnline = esito.partita;
+      if (esito.partita) inCodaDa = null;
+      apriFlussoOnline();
+      avviaBattitoOnline();
+      rendi();
+    })
+    .catch((errore) => {
+      inCodaDa = null;
+      erroreOnline = errore instanceof Error ? errore.message : 'Non sono riuscito a entrare in coda.';
+      rendi();
+    });
+}
+
+function annullaRicerca(): void {
+  const tok = token();
+  inCodaDa = null;
+  rendi();
+  if (tok) void cliente.esciDallaCoda(tok).catch(() => undefined);
+}
+
+function abbandonaPartita(): void {
+  const tok = token();
+  if (!tok || !partitaOnline) return;
+  cliente
+    .abbandona(tok)
+    .then((partita) => {
+      partitaOnline = partita;
+      if (partita && utenteRemoto) messaggioOnline = riassuntoEsito(partita, utenteRemoto.id);
+      rendi();
+    })
+    .catch(() => undefined);
+}
+
+/**
+ * Un ridisegno al secondo mentre si e' nella pagina Online: il contasecondi
+ * del turno e il tempo in coda si muovono da soli, senza eventi dal server.
+ */
+function avviaBattitoOnline(): void {
+  if (battitoOnline) return;
+  battitoOnline = setInterval(() => {
+    if (pagina !== 'online') return;
+    if (partitaOnline?.esito || inCodaDa !== null || partitaOnline) rendi();
+  }, 1000);
+}
+
+function fermaBattitoOnline(): void {
+  if (battitoOnline) clearInterval(battitoOnline);
+  battitoOnline = null;
+}
+
 /** La voce "Accedi" porta il nickname quando si e' connessi. */
 function barra(): string {
   return barraNavigazione(pagina, {
@@ -319,6 +494,42 @@ function rendi(): void {
       inCorso: accessoInCorso,
     };
     radice.innerHTML = barra() + paginaAccesso(contesto);
+    return;
+  }
+
+  if (pagina === 'online') {
+    const contesto: ContestoOnline = {
+      statoOnline: statoOnlineCorrente(),
+      attesaMs: inCodaDa === null ? 0 : Date.now() - inCodaDa,
+      erroriMazzo: erroriMazzoAttivo(),
+      nickname: utenteRemoto?.nickname ?? profilo.nickname,
+      mmr: utenteRemoto?.mmr ?? 0,
+      vittorie: utenteRemoto?.vittorie ?? 0,
+      sconfitte: utenteRemoto?.sconfitte ?? 0,
+      messaggio: messaggioOnline,
+    };
+
+    if (!partitaOnline) {
+      radice.innerHTML = barra() + paginaOnline(contesto);
+      return;
+    }
+
+    // In partita: lo stesso tabellone del gioco contro il bot, con
+    // l'avversario vero e il contasecondi del turno.
+    const schermata: Schermata = {
+      stato: partitaOnline.stato as StatoPartitaConCatalogo,
+      io: partitaOnline.io,
+      selezione,
+      messaggio: messaggio || messaggioOnline,
+      turnoDelBot: false,
+      animazione: null,
+      dettaglio,
+      urlSprite,
+      nomeAvversario: 'Avversario',
+      online: true,
+      secondiRimasti: secondiAlTurno(partitaOnline, Date.now()),
+    };
+    radice.innerHTML = barra() + disegna(schermata);
     return;
   }
 
@@ -406,6 +617,15 @@ function vaiA(nuova: Pagina): void {
   pagina = nuova;
   messaggio = nuova === 'gioca' ? messaggioDiFase() : '';
   if (globalThis.location) globalThis.location.hash = nuova;
+
+  if (nuova === 'online') {
+    apriFlussoOnline();
+    avviaBattitoOnline();
+  } else {
+    // Il battito si spegne, il flusso NO: e' la presenza al tavolo, e
+    // chiuderlo cambiando pagina farebbe perdere la partita a tavolino.
+    fermaBattitoOnline();
+  }
   rendi();
 }
 
@@ -539,30 +759,69 @@ function giocaIlBot(): void {
 
 // ------------------------------------------------------------------- eventi
 
+/**
+ * IL TAVOLO CORRENTE.
+ *
+ * Contro il bot si gioca sullo stato locale; online si gioca su quello che
+ * manda il server. Il resto dell'interfaccia - clic, dettagli, caselle - non
+ * deve sapere quale dei due: chiede qui e ottiene stato, lato e provenienza.
+ */
+function tavoloCorrente(): {
+  stato: StatoPartitaConCatalogo;
+  io: IndiceGiocatore;
+  online: boolean;
+} {
+  if (pagina === 'online' && partitaOnline) {
+    return {
+      stato: partitaOnline.stato as StatoPartitaConCatalogo,
+      io: partitaOnline.io,
+      online: true,
+    };
+  }
+  return { stato, io: IO, online: false };
+}
+
+/**
+ * Esegue una mossa sul tavolo corrente.
+ *
+ * In locale la applica il motore nel browser. Online la applica il SERVER:
+ * qui si manda e si aspetta lo stato nuovo. Non si prova a indovinarlo in
+ * anticipo - un client che si disegna una goccia che il server non ha dato
+ * mostrerebbe una partita che non esiste.
+ */
+function muovi(azione: Azione): void {
+  if (pagina === 'online') {
+    inviaAlServer(azione);
+    return;
+  }
+  if (applica(azione)) {
+    selezione = null;
+    dopoLaMiaMossa();
+  }
+}
+
 function clicSuCasella(giocatore: number, slot: number): void {
-  if (giocatore !== IO) {
+  const tavolo = tavoloCorrente();
+  if (giocatore !== tavolo.io) {
     messaggio = 'Puoi agire solo sul tuo schieramento.';
     rendi();
     return;
   }
 
-  const mio = stato.giocatori[IO];
+  const mio = tavolo.stato.giocatori[tavolo.io];
   const istanza = mio.tabellone[slot];
 
-  if (stato.fase === 'evocazione') {
+  if (tavolo.stato.fase === 'evocazione') {
     if (selezione?.tipo !== 'mano') {
       messaggio = 'Scegli prima una carta dalla mano.';
       rendi();
       return;
     }
-    if (applica({ tipo: 'evoca', indiceMano: selezione.indice, casella: slot })) {
-      selezione = null;
-      dopoLaMiaMossa();
-    }
+    muovi({ tipo: 'evoca', indiceMano: selezione.indice, casella: slot });
     return;
   }
 
-  if (stato.fase === 'riposizionamento') {
+  if (tavolo.stato.fase === 'riposizionamento') {
     if (selezione?.tipo === 'carta') {
       if (selezione.casella === slot) {
         selezione = null;
@@ -570,10 +829,7 @@ function clicSuCasella(giocatore: number, slot: number): void {
         rendi();
         return;
       }
-      if (applica({ tipo: 'riposiziona', da: selezione.casella, a: slot })) {
-        selezione = null;
-        dopoLaMiaMossa();
-      }
+      muovi({ tipo: 'riposiziona', da: selezione.casella, a: slot });
       return;
     }
     if (!istanza) {
@@ -587,7 +843,7 @@ function clicSuCasella(giocatore: number, slot: number): void {
     return;
   }
 
-  if (stato.fase === 'support') {
+  if (tavolo.stato.fase === 'support') {
     if (selezione?.tipo === 'support') {
       if (selezione.casella === slot) {
         selezione = null;
@@ -595,10 +851,7 @@ function clicSuCasella(giocatore: number, slot: number): void {
         rendi();
         return;
       }
-      if (applica({ tipo: 'supportCura', casella: selezione.casella, bersaglio: slot })) {
-        selezione = null;
-        dopoLaMiaMossa();
-      }
+      muovi({ tipo: 'supportCura', casella: selezione.casella, bersaglio: slot });
       return;
     }
     if (!istanza || istanza.tipo !== 'support') {
@@ -905,6 +1158,9 @@ async function inviaAccesso(): Promise<void> {
     // stesso giocatore, e vedersi due nomi diversi sarebbe sconcertante.
     profilo = { ...profilo, nickname: esito.utente.nickname };
     salvaProfilo();
+    // Appena si entra si apre il flusso: una partita in corso dal
+    // dispositivo di prima riprende senza dover andare a cercarla.
+    apriFlussoOnline();
   } catch (errore) {
     erroreAccesso =
       errore instanceof ErroreServer ? errore.message : 'Qualcosa e andato storto';
@@ -920,6 +1176,10 @@ async function esciDallAccount(): Promise<void> {
   const salvato = token();
   utenteRemoto = null;
   deposito.scrivi(CHIAVE_TOKEN, null);
+  // Uscendo si chiude anche il flusso: tenerlo aperto con un token revocato
+  // vorrebbe dire riprovare a collegarsi ogni due secondi per sempre.
+  chiudiFlussoOnline();
+  fermaBattitoOnline();
   rendi();
   // Il token si revoca anche sul server, non solo qui: dimenticarlo nel
   // browser lo lascerebbe valido per chiunque altro ce l'avesse.
@@ -1099,9 +1359,80 @@ function clicSullePagine(bersaglio: Element): boolean {
   return false;
 }
 
+/** Clic dentro la pagina Online. Vero se l'ha gestito lui. */
+function clicSullOnline(bersaglio: Element): boolean {
+  const comando = bersaglio.closest<HTMLElement>('[data-azione]');
+  const azione = comando?.dataset.azione;
+
+  if (azione === 'cerca-partita' || azione === 'torna-in-coda') {
+    partitaOnline = null;
+    cercaPartita();
+    return true;
+  }
+  if (azione === 'esci-coda') {
+    annullaRicerca();
+    return true;
+  }
+  if (azione === 'abbandona') {
+    abbandonaPartita();
+    return true;
+  }
+  if (azione === 'passa') {
+    muovi({ tipo: 'passaFase' });
+    return true;
+  }
+  if (azione === 'goccia' && selezione?.tipo === 'support') {
+    muovi({ tipo: 'supportGoccia', casella: selezione.casella });
+    return true;
+  }
+  return false;
+}
+
 radice.addEventListener('click', (evento) => {
   const bersaglio = evento.target;
   if (!(bersaglio instanceof Element)) return;
+
+  if (pagina === 'online') {
+    const voce = bersaglio.closest<HTMLElement>('[data-pagina]');
+    if (voce) {
+      vaiA(voce.dataset.pagina as Pagina);
+      return;
+    }
+    if (clicSullOnline(bersaglio)) return;
+
+    // Senza partita in corso non c'e' tabellone su cui cliccare.
+    const tavolo = tavoloCorrente();
+    if (!tavolo.online || tavolo.stato.fase === 'finita') return;
+    if (tavolo.stato.turnoDi !== tavolo.io) {
+      messaggio = "Tocca all'avversario.";
+      rendi();
+      return;
+    }
+
+    const oggetto = bersaglio.closest<HTMLElement>('[data-gioca-oggetto]');
+    if (oggetto) {
+      selezione = null;
+      muovi({ tipo: 'giocaOggetto', indiceMano: Number(oggetto.dataset.giocaOggetto) });
+      return;
+    }
+
+    const inMano = bersaglio.closest<HTMLElement>('[data-mano]');
+    if (inMano) {
+      const indice = Number(inMano.dataset.mano);
+      selezione =
+        selezione?.tipo === 'mano' && selezione.indice === indice ? null : { tipo: 'mano', indice };
+      const def = tavolo.stato.catalogo[tavolo.stato.giocatori[tavolo.io].mano[indice]];
+      messaggio = selezione && def ? `${def.nome}: scegli la casella.` : '';
+      rendi();
+      return;
+    }
+
+    const casella = bersaglio.closest<HTMLElement>('[data-casella]');
+    if (casella) {
+      clicSuCasella(Number(casella.dataset.giocatore), Number(casella.dataset.casella));
+    }
+    return;
+  }
 
   if (pagina === 'crea' || pagina === 'moderazione' || pagina === 'accesso') {
     const voce = bersaglio.closest<HTMLElement>('[data-pagina]');
@@ -1186,19 +1517,16 @@ radice.addEventListener('mouseover', (evento) => {
   const bersaglio = evento.target;
   if (!(bersaglio instanceof Element)) return;
 
-  const oggetto = bersaglio.closest<HTMLElement>('[data-gioca-oggetto]');
-  if (oggetto) {
-    // Una carta oggetto non chiede una casella: si gioca e basta.
-    selezione = null;
-    if (applica({ tipo: 'giocaOggetto', indiceMano: Number(oggetto.dataset.giocaOggetto) })) {
-      dopoLaMiaMossa();
-    }
-    return;
-  }
-
-  const inMano = bersaglio.closest<HTMLElement>('[data-mano]');
+  // Passarci sopra MOSTRA la carta, non la gioca: una carta oggetto si
+  // gioca al clic. Qui c'era una copia del gestore del clic, e bastava
+  // sfiorare la Goccia di Sangue col puntatore per spenderla.
+  const inMano =
+    bersaglio.closest<HTMLElement>('[data-mano]') ??
+    bersaglio.closest<HTMLElement>('[data-gioca-oggetto]');
   if (inMano) {
-    const def = stato.catalogo[stato.giocatori[IO].mano[Number(inMano.dataset.mano)]];
+    const tavolo = tavoloCorrente();
+    const indice = Number(inMano.dataset.mano ?? inMano.dataset.giocaOggetto);
+    const def = tavolo.stato.catalogo[tavolo.stato.giocatori[tavolo.io].mano[indice]];
     if (!def) return;
     const nuovo: CartaInCampo = {
       uid: 'anteprima',
@@ -1224,7 +1552,9 @@ radice.addEventListener('mouseover', (evento) => {
   const casellaPuntata = bersaglio.closest<HTMLElement>('[data-casella]');
   if (casellaPuntata) {
     const giocatore = Number(casellaPuntata.dataset.giocatore) as IndiceGiocatore;
-    const istanza = stato.giocatori[giocatore].tabellone[Number(casellaPuntata.dataset.casella)];
+    const istanza = tavoloCorrente().stato.giocatori[giocatore].tabellone[
+      Number(casellaPuntata.dataset.casella)
+    ];
     if (istanza && dettaglio?.uid !== istanza.uid) {
       dettaglio = istanza;
       rendi();

@@ -1956,3 +1956,90 @@ kbd {
     max-width: 192px;
   }
 }
+
+/* --- pagina online ------------------------------------------------------ */
+
+.attesa-online {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scheda-online .punteggio {
+  font-family: var(--pixel);
+  font-size: 22px;
+  color: var(--accento-chiaro);
+  margin: 0;
+}
+
+.scheda-online .punteggio span {
+  font-size: 9px;
+  color: var(--testo-secondario);
+  margin-left: 6px;
+}
+
+.avviso-online p,
+.attesa-online p {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0 0 8px;
+}
+
+.attesa-tempo {
+  font-family: var(--pixel);
+  font-size: 28px;
+  color: var(--accento-chiaro);
+  /* A scatti di un secondo, come il numero che mostra: niente dissolvenze. */
+  animation: pulsa-attesa 2s steps(4, end) infinite;
+}
+
+@keyframes pulsa-attesa {
+  0% { opacity: 1; }
+  50% { opacity: 0.45; }
+  100% { opacity: 1; }
+}
+
+.pulsanti-coda {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+/* --- contasecondi del turno --------------------------------------------- */
+
+.contasecondi {
+  font-family: var(--pixel);
+  font-size: 11px;
+  padding: 6px 9px;
+  margin-left: auto;
+  color: var(--testo);
+  background: var(--trama);
+  border: 2px solid var(--accento-scuro);
+}
+
+.contasecondi.urgente {
+  color: var(--fondo);
+  background: var(--accento);
+  border-color: var(--accento-chiaro);
+  /* Quattro fotogrammi, non una dissolvenza: il lampeggio e' pixelato. */
+  animation: lampeggia-urgente 1s steps(2, end) infinite;
+}
+
+@keyframes lampeggia-urgente {
+  0% { opacity: 1; }
+  50% { opacity: 0.35; }
+  100% { opacity: 1; }
+}
+
+@media (min-width: 900px) {
+  .attesa-online {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .attesa-online > .pannello {
+    flex: 1;
+  }
+}

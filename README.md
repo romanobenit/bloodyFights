@@ -273,3 +273,40 @@ nonostante la Fase 4 saltata al primo turno: con il difensore che non replica,
 il tempo e quasi tutto. Da verificare con giocatori umani prima di cambiare le
 regole; se si confermasse, le leve sono in `config.ts` (compensazione piu
 ampia, oppure una goccia in piu al secondo giocatore).
+
+
+## Giocare online, in locale
+
+Servono due processi: il server (arbitro) e il sito.
+
+```
+npm run server     # arbitro su http://localhost:4000
+npm run dev        # sito su http://localhost:5173
+```
+
+Poi si aprono DUE finestre del browser - una normale e una in navigazione
+privata, perche' il conto sta in `localStorage` e due schede della stessa
+finestra sarebbero lo stesso giocatore. In ognuna: Account -> registrati ->
+Online -> Cerca partita. Appena i due sono in coda la partita parte.
+
+Il server e' autoritativo: il browser manda mosse e riceve stati, non calcola
+niente che conti. Le carte dell'avversario arrivano coperte, quindi aprire
+gli strumenti per sviluppatori non mostra la sua mano.
+
+Un turno dura 60 secondi; scaduto, passa all'altro. Se cade la connessione si
+hanno 30 secondi per tornare, poi la partita e' persa a tavolino.
+
+### Quando il server sara' pubblicato
+
+Oggi il sito pubblicato su Vercel non ha un server dietro, e la pagina Online
+lo dice invece di rompersi. Per accenderla servono tre cose, tutte da
+cambiare insieme:
+
+1. `indirizzoServerPredefinito()` in `apps/web/src/cliente.ts`: deve
+   restituire l'indirizzo del server anche fuori da localhost.
+2. `connect-src` in `vercel.json`: deve elencare quell'indirizzo, altrimenti
+   il browser blocca le chiamate prima ancora di farle.
+3. `ORIGINI` sul server: deve elencare il dominio del sito, altrimenti e' il
+   server a rifiutarle.
+
+Due su tre non bastano, ed e' la ragione per cui sono scritte qui insieme.

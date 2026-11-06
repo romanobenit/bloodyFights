@@ -83,6 +83,15 @@ export interface Schermata {
   /** Carta da mostrare nel pannello di dettaglio. */
   dettaglio: CartaInCampo | null;
   urlSprite: (cartaId: string) => string;
+  /** Come si chiama chi sta di fronte. Contro la macchina resta 'Bot'. */
+  nomeAvversario?: string;
+  /**
+   * Partita online: cambia i comandi (si abbandona, non si ricomincia) e
+   * accende il contasecondi del turno.
+   */
+  online?: boolean;
+  /** Secondi che restano al turno in corso, oppure null se non c'e' limite. */
+  secondiRimasti?: number | null;
 }
 
 const NOMI_FASI: Record<Exclude<Fase, 'finita'>, string> = {
@@ -411,12 +420,19 @@ function mano(s: Schermata): string {
   return `<div class="mano">${carte.join('')}</div>`;
 }
 
+function contasecondi(s: Schermata): string {
+  if (s.secondiRimasti === undefined || s.secondiRimasti === null) return '';
+  const secondi = Math.max(0, Math.ceil(s.secondiRimasti));
+  // Sotto i dieci secondi diventa urgente: lo stesso numero, letto diverso.
+  return `<span class="contasecondi ${secondi <= 10 ? 'urgente' : ''}">${secondi}s</span>`;
+}
+
 function barraFasi(s: Schermata): string {
   const fasi = (Object.keys(NOMI_FASI) as Exclude<Fase, 'finita'>[]).map((fase) => {
     const corrente = s.stato.fase === fase;
     return `<span class="fase ${corrente ? 'corrente' : ''}">${NOMI_FASI[fase]}</span>`;
   });
-  return `<div class="barra-fasi">${fasi.join('')}</div>`;
+  return `<div class="barra-fasi">${fasi.join('')}${contasecondi(s)}</div>`;
 }
 
 function comandi(s: Schermata): string {
@@ -435,14 +451,18 @@ function comandi(s: Schermata): string {
         ${etichetta}
       </button>
       ${scelteSupport}
-      <button type="button" class="bottone secondario" data-azione="nuova">Nuova partita</button>
+      ${
+        s.online
+          ? `<button type="button" class="bottone secondario" data-azione="abbandona">Abbandona</button>`
+          : `<button type="button" class="bottone secondario" data-azione="nuova">Nuova partita</button>`
+      }
     </div>`;
 }
 
 // -------------------------------------------------------------- il registro
 
 export function descriviVoce(voce: VoceLog, s: Schermata): { testo: string; rilievo: boolean } | null {
-  const chi = (g: IndiceGiocatore) => (g === s.io ? 'Tu' : 'Il bot');
+  const chi = (g: IndiceGiocatore) => (g === s.io ? 'Tu' : s.nomeAvversario ?? 'Il bot');
   const nomeIn = (g: IndiceGiocatore, slot: number) =>
     s.stato.giocatori[g].tabellone[slot]?.nome ?? 'una carta';
   const nomeCarta = (cartaId: string) => s.stato.catalogo[cartaId]?.nome ?? cartaId;
@@ -539,11 +559,16 @@ function dettaglio(s: Schermata): string {
 function esito(s: Schermata): string {
   if (s.stato.fase !== 'finita') return '';
   const vinto = s.stato.vincitore === s.io;
+  const pari = s.stato.vincitore === null;
   return `
     <div class="esito">
-      <h1>${vinto ? 'VITTORIA' : 'SCONFITTA'}</h1>
+      <h1>${pari ? 'PAREGGIO' : vinto ? 'VITTORIA' : 'SCONFITTA'}</h1>
       <p>Partita chiusa al turno ${s.stato.turno}.</p>
-      <button type="button" class="bottone" data-azione="nuova">Nuova partita</button>
+      ${
+        s.online
+          ? `<button type="button" class="bottone" data-azione="torna-in-coda">Cerca un'altra partita</button>`
+          : `<button type="button" class="bottone" data-azione="nuova">Nuova partita</button>`
+      }
     </div>`;
 }
 
@@ -553,7 +578,7 @@ export function disegna(s: Schermata): string {
   return `
     <div class="partita">
       <div class="colonna-gioco">
-        ${testata(s, (1 - s.io) as IndiceGiocatore, 'Bot')}
+        ${testata(s, (1 - s.io) as IndiceGiocatore, s.nomeAvversario ?? 'Bot')}
         <div class="tabellone">
           ${linea(s, (1 - s.io) as IndiceGiocatore, 1, 'avversario<br />2a linea')}
           ${linea(s, (1 - s.io) as IndiceGiocatore, 0, 'avversario<br />1a linea')}

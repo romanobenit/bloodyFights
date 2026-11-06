@@ -5,4 +5,5 @@ export * from './costo.ts';
 export * from './carte-base.ts';
 export * from './tabellone.ts';
 export * from './rng.ts';
+export * from './occulta.ts';
 export * from './motore.ts';
