@@ -12,7 +12,7 @@ import { fuggi } from './vista.ts';
  * stringa HTML, nessun accesso al DOM, quindi verificabili in Node.
  */
 
-export type Pagina = 'gioca' | 'mazzo' | 'crea' | 'moderazione' | 'profilo' | 'tutorial';
+export type Pagina = 'gioca' | 'mazzo' | 'crea' | 'moderazione' | 'profilo' | 'accesso' | 'tutorial';
 
 export const PAGINE: { id: Pagina; nome: string }[] = [
   { id: 'gioca', nome: 'Gioca' },
@@ -20,6 +20,7 @@ export const PAGINE: { id: Pagina; nome: string }[] = [
   { id: 'crea', nome: 'Crea carta' },
   { id: 'moderazione', nome: 'Moderazione' },
   { id: 'profilo', nome: 'Profilo' },
+  { id: 'accesso', nome: 'Accedi' },
   { id: 'tutorial', nome: 'Tutorial' },
 ];
 
@@ -43,10 +44,17 @@ const TIPI: TipoCarta[] = ['mischia', 'distanza', 'support'];
 
 // ------------------------------------------------------------- navigazione
 
-export function barraNavigazione(pagina: Pagina): string {
+/**
+ * `etichette` permette di cambiare il nome di una voce senza toccare l'elenco:
+ * serve ad "Accedi", che diventa il nickname quando si e' connessi.
+ */
+export function barraNavigazione(
+  pagina: Pagina,
+  etichette: Partial<Record<Pagina, string>> = {},
+): string {
   const voci = PAGINE.map(
     (v) =>
-      `<a class="voce ${v.id === pagina ? 'corrente' : ''}" href="#${v.id}" data-pagina="${v.id}">${v.nome}</a>`,
+      `<a class="voce ${v.id === pagina ? 'corrente' : ''}" href="#${v.id}" data-pagina="${v.id}">${fuggi(etichette[v.id] ?? v.nome)}</a>`,
   );
   return `<nav class="navigazione"><span class="marchio">BLOODY<span>FIGHTS</span></span>${voci.join('')}</nav>`;
 }
@@ -361,12 +369,16 @@ function paginaTutorial(): string {
 
 // ------------------------------------------------------------------ uscita
 
+/**
+ * Il corpo della pagina, SENZA la barra di navigazione: quella la mette
+ * sempre chi disegna, in un punto solo. Averla anche qui significava
+ * disegnarla due volte e doverne togliere una a forza di sostituzioni.
+ */
 export function disegnaPagina(c: ContestoPagine): string {
   const corpo =
     c.pagina === 'mazzo' ? paginaMazzo(c) : c.pagina === 'profilo' ? paginaProfilo(c) : paginaTutorial();
 
   return `
-    ${barraNavigazione(c.pagina)}
     ${c.messaggio ? `<div class="messaggio">${fuggi(c.messaggio)}</div>` : ''}
     ${corpo}`;
 }

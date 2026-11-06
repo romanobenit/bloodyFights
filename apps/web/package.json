@@ -14,5 +14,8 @@
     "@bloodyfights/bot": "*",
     "@bloodyfights/motore": "*",
     "@bloodyfights/pixel": "*"
+  },
+  "devDependencies": {
+    "@bloodyfights/server": "*"
   }
 }

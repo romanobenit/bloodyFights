@@ -27,6 +27,14 @@ import {
   approva, coda, comandoDaTasto, paginaModerazione, revoca, rifiuta,
   type ContestoModerazione, type MotivoRifiuto,
 } from './moderazione.ts';
+import {
+  ErroreServer, creaCliente, indirizzoServerPredefinito,
+  type UtenteRemoto,
+} from './cliente.ts';
+import {
+  etichettaAccesso, moduloVuoto, paginaAccesso,
+  type ContestoAccesso, type ModoAccesso, type ModuloAccesso, type StatoServer,
+} from './accesso.ts';
 import { depositoLocale, type Deposito } from './deposito.ts';
 import {
   PAGINE,
@@ -162,6 +170,49 @@ let filtro: Filtro = 'tutti';
 // Stato dell'editor di carte. `telaLavoro` e' il tratto in corso, non ancora
 // registrato nella cronologia: si registra al rilascio, cosi' un annulla
 // riporta indietro di un tratto intero e non di un pixel.
+// ------------------------------------------------------- account remoto
+
+const CHIAVE_TOKEN = 'token';
+const cliente = creaCliente(indirizzoServerPredefinito());
+
+let statoServer: StatoServer = 'sconosciuto';
+let utenteRemoto: UtenteRemoto | null = null;
+let modulo: ModuloAccesso = moduloVuoto();
+let erroreAccesso = '';
+let accessoInCorso = false;
+
+function token(): string | null {
+  return deposito.leggi<string>(CHIAVE_TOKEN);
+}
+
+/**
+ * All'avvio si chiede al server se c'e'. Se non risponde l'app resta in
+ * modalita' locale: non e' un guasto, e' il caso normale di una copia
+ * pubblicata su un sito statico.
+ */
+async function risvegliaSessione(): Promise<void> {
+  if (!cliente.base) {
+    statoServer = 'assente';
+    rendi();
+    return;
+  }
+
+  statoServer = (await cliente.salute()) ? 'presente' : 'assente';
+
+  const salvato = token();
+  if (statoServer === 'presente' && salvato) {
+    try {
+      utenteRemoto = await cliente.io(salvato);
+    } catch (errore) {
+      // Token scaduto o revocato: si butta via invece di riprovare all infinito.
+      if (errore instanceof ErroreServer && !errore.irraggiungibile) {
+        deposito.scrivi(CHIAVE_TOKEN, null);
+      }
+    }
+  }
+  rendi();
+}
+
 let bozza: Bozza = bozzaIniziale();
 let telaLavoro: Tela | null = null;
 let inizioTratto: Punto | null = null;
@@ -249,7 +300,26 @@ function messaggioDiFase(): string {
   }
 }
 
+/** La voce "Accedi" porta il nickname quando si e' connessi. */
+function barra(): string {
+  return barraNavigazione(pagina, {
+    accesso: etichettaAccesso({ utente: utenteRemoto, statoServer }),
+  });
+}
+
 function rendi(): void {
+  if (pagina === 'accesso') {
+    const contesto: ContestoAccesso = {
+      statoServer,
+      utente: utenteRemoto,
+      modulo,
+      errore: erroreAccesso,
+      inCorso: accessoInCorso,
+    };
+    radice.innerHTML = barra() + paginaAccesso(contesto);
+    return;
+  }
+
   if (pagina === 'moderazione') {
     const mia = profilo.cartaCreata ? [profilo.cartaCreata] : [];
     const contesto: ContestoModerazione = {
@@ -259,7 +329,7 @@ function rendi(): void {
       creatore: profilo.nickname || 'Tu',
       messaggio,
     };
-    radice.innerHTML = barraNavigazione(pagina) +
+    radice.innerHTML = barra() +
       (messaggio ? `<div class="messaggio">${messaggio}</div>` : '') +
       paginaModerazione(contesto);
     dipingiTele();
@@ -268,7 +338,7 @@ function rendi(): void {
 
   if (pagina === 'crea') {
     const contesto: ContestoEditor = { bozza, gia: profilo.cartaCreata ?? null, messaggio };
-    radice.innerHTML = barraNavigazione(pagina) +
+    radice.innerHTML = barra() +
       (messaggio ? `<div class="messaggio">${messaggio}</div>` : '') +
       paginaEditor(contesto);
     dipingiTele();
@@ -286,7 +356,7 @@ function rendi(): void {
       duraturo: deposito.duraturo,
       urlSprite,
     };
-    radice.innerHTML = disegnaPagina(contesto);
+    radice.innerHTML = barra() + disegnaPagina(contesto);
     return;
   }
 
@@ -302,7 +372,7 @@ function rendi(): void {
     dettaglio,
     urlSprite,
   };
-  radice.innerHTML = barraNavigazione(pagina) + disegna(schermata);
+  radice.innerHTML = barra() + disegna(schermata);
 }
 
 /**
@@ -805,6 +875,76 @@ function decidi(comando: { tipo: 'approva' } | { tipo: 'rifiuta'; motivo: Motivo
   rendi();
 }
 
+/**
+ * Invia il modulo di accesso o di registrazione.
+ *
+ * La password sta solo in memoria per il tempo della chiamata: non finisce
+ * nel deposito, non viene ridisegnata nel campo e non compare in nessun log.
+ */
+async function inviaAccesso(): Promise<void> {
+  if (accessoInCorso) return;
+  accessoInCorso = true;
+  erroreAccesso = '';
+  rendi();
+
+  try {
+    const esito =
+      modulo.modo === 'registrazione'
+        ? await cliente.registrazione(modulo.email, modulo.password, modulo.nickname)
+        : await cliente.accesso(modulo.email, modulo.password);
+
+    deposito.scrivi(CHIAVE_TOKEN, esito.token);
+    utenteRemoto = esito.utente;
+    statoServer = 'presente';
+    modulo = moduloVuoto();
+
+    // Il nickname dell'account diventa quello del profilo locale: e' lo
+    // stesso giocatore, e vedersi due nomi diversi sarebbe sconcertante.
+    profilo = { ...profilo, nickname: esito.utente.nickname };
+    salvaProfilo();
+  } catch (errore) {
+    erroreAccesso =
+      errore instanceof ErroreServer ? errore.message : 'Qualcosa e andato storto';
+    if (errore instanceof ErroreServer && errore.irraggiungibile) statoServer = 'assente';
+  } finally {
+    accessoInCorso = false;
+    modulo = { ...modulo, password: '' };
+    rendi();
+  }
+}
+
+async function esciDallAccount(): Promise<void> {
+  const salvato = token();
+  utenteRemoto = null;
+  deposito.scrivi(CHIAVE_TOKEN, null);
+  rendi();
+  // Il token si revoca anche sul server, non solo qui: dimenticarlo nel
+  // browser lo lascerebbe valido per chiunque altro ce l'avesse.
+  if (salvato) await cliente.uscita(salvato).catch(() => undefined);
+}
+
+/** Clic dentro la pagina di accesso. */
+function clicSullAccesso(bersaglio: Element): boolean {
+  const modo = bersaglio.closest<HTMLElement>('[data-modo]');
+  if (modo) {
+    modulo = { ...moduloVuoto(), modo: modo.dataset.modo as ModoAccesso, email: modulo.email };
+    erroreAccesso = '';
+    rendi();
+    return true;
+  }
+
+  const comando = bersaglio.closest<HTMLElement>('[data-azione]');
+  if (comando?.dataset.azione === 'invia-accesso') {
+    void inviaAccesso();
+    return true;
+  }
+  if (comando?.dataset.azione === 'esci') {
+    void esciDallAccount();
+    return true;
+  }
+  return false;
+}
+
 /** Clic dentro il pannello di moderazione. */
 function clicSullaModerazione(bersaglio: Element): boolean {
   if (bersaglio.closest('[data-approva]')) {
@@ -960,13 +1100,14 @@ radice.addEventListener('click', (evento) => {
   const bersaglio = evento.target;
   if (!(bersaglio instanceof Element)) return;
 
-  if (pagina === 'crea' || pagina === 'moderazione') {
+  if (pagina === 'crea' || pagina === 'moderazione' || pagina === 'accesso') {
     const voce = bersaglio.closest<HTMLElement>('[data-pagina]');
     if (voce) {
       vaiA(voce.dataset.pagina as Pagina);
       return;
     }
     if (pagina === 'moderazione') clicSullaModerazione(bersaglio);
+    else if (pagina === 'accesso') clicSullAccesso(bersaglio);
     else clicSullEditor(bersaglio);
     return;
   }
@@ -1082,6 +1223,15 @@ radice.addEventListener('input', (evento) => {
     case 'bio':
       profilo = { ...profilo, bio: valore };
       break;
+    case 'email-accesso':
+      modulo = { ...modulo, email: valore };
+      return; // niente ridisegno: il valore e gia nel campo
+    case 'password-accesso':
+      modulo = { ...modulo, password: valore };
+      return;
+    case 'nickname-accesso':
+      modulo = { ...modulo, nickname: valore };
+      return;
     case 'nome-carta':
       // La bozza vive finche' non si invia: niente da salvare, ma la pagina
       // va ridisegnata perche' il nome sblocca l'invio e compare nell'anteprima.
@@ -1127,3 +1277,7 @@ globalThis.addEventListener?.('hashchange', () => {
 messaggio = pagina === 'gioca' ? messaggioDiFase() : '';
 rendi();
 if (pagina === 'gioca' && stato.turnoDi !== IO) giocaIlBot();
+
+// Si disegna subito e si chiede al server dopo: la pagina non deve restare
+// bianca per due secondi aspettando una risposta che potrebbe non arrivare.
+void risvegliaSessione();

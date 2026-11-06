@@ -1698,3 +1698,31 @@ kbd {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* =========================================================================
+   ACCESSO
+   ========================================================================= */
+
+.benvenuto {
+  font-family: var(--pixel);
+  font-size: 16px;
+  color: var(--accento-chiaro);
+  margin: 0 0 14px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--bordo);
+  word-break: break-word;
+}
+
+.campo input[type='password'],
+.campo input[type='email'] {
+  letter-spacing: 0.5px;
+}
+
+.nota code {
+  font-family: var(--pixel);
+  font-size: 9px;
+  padding: 2px 5px;
+  background: var(--fondo);
+  border: 2px solid var(--accento-scuro);
+  color: var(--testo);
+}

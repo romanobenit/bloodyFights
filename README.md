@@ -10,7 +10,7 @@ specifiche v0.1 (5 novembre 2026).
 |------|-----------|-------|
 | 0 | Motore di gioco puro + suite di test | **completata** |
 | 1 | Tabellone giocabile, bot elementare, primo playtest | **completata** |
-| 2 | Account, mazzi, tutorial | **completata lato server; manca la UI di accesso** |
+| 2 | Account, mazzi, tutorial | **completata** |
 | 3 | Editor di carte, coda di moderazione | **completata (coda locale)** |
 | 4 | Online: WebSocket, matchmaking, MMR | **in corso: server e identita** |
 | 5 | Economia, bauli, feed della home | da fare |
@@ -32,7 +32,7 @@ funzionano gia da Node 22.6.
 ## Comandi
 
 ```bash
-npm test          # 343 test su motore, pixel, server, pagine, interfaccia e stile
+npm test          # 371 test su motore, pixel, server, pagine, interfaccia e stile
 npm run server    # avvia il server su http://localhost:4000
 npm run dev       # gioca su http://localhost:5173
 npm run build     # compila in apps/web/dist
@@ -77,6 +77,8 @@ apps/web/          tabellone giocabile, mazzo, profilo, tutorial
   src/pagine.ts      mazzo, profilo, tutorial: stesse regole, stessa purezza
   src/editor.ts      editor di carte: strumenti, vincoli, barra di potenza
   src/moderazione.ts coda di revisione, decisioni, revoca di un rifiuto
+  src/cliente.ts     chiamate al server, con riconoscimento del server assente
+  src/accesso.ts     moduli di accesso e registrazione, pannello dell account
   src/profilo.ts     collezione, mazzi, validazione. Funzioni pure
   src/deposito.ts    dove finiscono i dati: memoria o localStorage
   src/main.ts        clic -> azioni, turno del bot, navigazione
@@ -212,11 +214,27 @@ Il sito su Vercel e' statico e li' un server non vive. Il backend vuole un
 processo persistente: Railway o Fly.io, come dice il cap. 10.1. Vercel resta
 ottimo per il frontend.
 
+### Accesso dal client
+
+La scheda **Accedi** porta i moduli di registrazione e accesso. Il token
+finisce nel deposito del browser; all'avvio l'app chiede al server se c'e' e,
+se c'e', ripristina la sessione.
+
+**Quando il server non risponde l'app non si rompe**: resta in modalita'
+locale, e la pagina lo spiega invece di mostrare un modulo che non potrebbe
+funzionare. E' il caso normale della copia pubblicata su un sito statico, dove
+un server non vive. Mazzi, collezione e carta creata restano comunque nel
+browser; sul server ci sono account, MMR e statistiche.
+
+Un gruppo di test avvia il server vero e gli parla con il client vero: i test
+del client usano un `fetch` finto e quelli del server chiamano le proprie
+rotte, quindi ognuno dei due potrebbe passare mentre il confine fra loro e'
+rotto.
+
 ### Cosa manca alla fase 4
 
-La UI di accesso nel client, il matchmaking con la coda MMR, le partite fra
-due browser e il flusso in tempo reale. L'archivio prevede gia' le raccolte
-del cap. 10.4.
+Il matchmaking con la coda MMR, le partite fra due browser e il flusso in
+tempo reale. L'archivio prevede gia' le raccolte del cap. 10.4.
 
 ## La palette: una decisione da confermare
 
