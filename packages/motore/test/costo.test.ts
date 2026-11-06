@@ -28,11 +28,14 @@ const ATTESI = [
   ['Leviatano di Petrolio', 18.5, 5, 'leggendario'],
 ] as const;
 
+/** Le creature: le carte oggetto non passano dalla formula del costo. */
+const CREATURE = CARTE_BASE.filter((c) => c.tipo !== 'oggetto');
+
 describe('formula del costo', () => {
   test('le 20 carte base riproducono la tabella del documento', () => {
-    assert.equal(CARTE_BASE.length, 20);
+    assert.equal(CREATURE.length, 20);
     for (const [i, [nome, potenza, costo, rarita]] of ATTESI.entries()) {
-      const carta = CARTE_BASE[i];
+      const carta = CREATURE[i];
       assert.equal(carta.nome, nome, `carta ${i + 1}`);
       assert.equal(carta.potenza, potenza, `potenza di ${nome}`);
       assert.equal(carta.costo, costo, `costo di ${nome}`);
@@ -41,12 +44,12 @@ describe('formula del costo', () => {
   });
 
   test('distribuzione per costo: 4 / 5 / 5 / 4 / 2', () => {
-    const perCosto = [1, 2, 3, 4, 5].map((c) => CARTE_BASE.filter((x) => x.costo === c).length);
+    const perCosto = [1, 2, 3, 4, 5].map((c) => CREATURE.filter((x) => x.costo === c).length);
     assert.deepEqual(perCosto, [4, 5, 5, 4, 2]);
   });
 
   test('distribuzione per elemento e per tipo', () => {
-    const conta = (k: 'elemento' | 'tipo', v: string) => CARTE_BASE.filter((c) => c[k] === v).length;
+    const conta = (k: 'elemento' | 'tipo', v: string) => CREATURE.filter((c) => c[k] === v).length;
     assert.equal(conta('elemento', 'petrolio'), 4);
     assert.equal(conta('elemento', 'sangue'), 4);
     assert.equal(conta('elemento', 'acqua'), 3);
@@ -76,6 +79,39 @@ describe('formula del costo', () => {
       const costo = calcolaCosto(p);
       assert.ok(costo >= 1 && costo <= 5, `potenza ${p} -> costo ${costo}`);
     }
+  });
+});
+
+describe('carte oggetto', () => {
+  test('non passano dalla formula: potenza zero e costo zero', () => {
+    const oggetto = CARTE_BASE.find((c) => c.tipo === 'oggetto');
+    assert.ok(oggetto, 'c e almeno una carta oggetto');
+    assert.equal(oggetto.potenza, 0);
+    assert.equal(oggetto.costo, 0);
+    assert.equal(oggetto.effetto, 'goccia');
+  });
+
+  test('un utente non le puo creare', () => {
+    const esito = validaCarta({ vita: 1, attacco: 0, tipo: 'oggetto', elemento: 'sangue', nome: 'Furba' });
+    assert.equal(esito.valida, false);
+    assert.match(esito.errori.join(' '), /non si possono creare/);
+  });
+});
+
+describe('descrizioni', () => {
+  test('ogni carta ne ha una, e nessuna supera il limite', () => {
+    for (const carta of CARTE_BASE) {
+      assert.ok(carta.descrizione.length > 0, `${carta.nome} senza descrizione`);
+      assert.ok(
+        carta.descrizione.length <= CONFIG.carte.descrizioneMaxCaratteri,
+        `${carta.nome}: ${carta.descrizione.length} caratteri`,
+      );
+    }
+  });
+
+  test('la descrizione non incide sul costo', () => {
+    const base = { vita: 5, attacco: 4, tipo: 'mischia', elemento: 'sangue' } as const;
+    assert.equal(calcolaPotenza(base), calcolaPotenza({ ...base }));
   });
 });
 

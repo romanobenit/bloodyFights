@@ -160,7 +160,7 @@ describe('navigazione fra le pagine', () => {
     clicca({ filtro: 'fuoco' });
     assert.equal((html().match(/data-aggiungi="/g) ?? []).length, 3);
     clicca({ filtro: 'tutti' });
-    assert.equal((html().match(/data-aggiungi="/g) ?? []).length, 20);
+    assert.equal((html().match(/data-aggiungi="/g) ?? []).length, 21, '20 creature piu la carta oggetto');
   });
 
   test('un secondo mazzo si crea vuoto e si puo riempire', () => {
@@ -306,13 +306,21 @@ describe('dal disegno alla moderazione', () => {
     assert.doesNotMatch(html(), /data-azione="annulla"\s+disabled/, 'c e qualcosa da annullare');
   });
 
-  test('con un nome la carta si puo inviare', () => {
-    impalcatura.radice.scatena('input', new ElementoBase('input', { campo: 'nome-carta' }), {});
+  test('senza descrizione l invio resta bloccato', () => {
     // L'elemento finto non ha `value`: lo si impone come farebbe il campo vero.
-    const campo = Object.assign(new ElementoBase('input', { campo: 'nome-carta' }), {
+    const nome = Object.assign(new ElementoBase('input', { campo: 'nome-carta' }), {
       value: 'Bestia di Prova',
     });
-    impalcatura.radice.scatena('input', campo);
+    impalcatura.radice.scatena('input', nome);
+    assert.match(html(), /Manca la descrizione/);
+    assert.match(html(), /data-azione="invia-carta"\s+disabled/);
+  });
+
+  test('con nome e descrizione la carta si puo inviare', () => {
+    const descrizione = Object.assign(new ElementoBase('textarea', { campo: 'descrizione-carta' }), {
+      value: 'Una bestia come tante, ma piu arrabbiata.',
+    });
+    impalcatura.radice.scatena('input', descrizione);
     assert.doesNotMatch(html(), /data-azione="invia-carta"\s+disabled/);
 
     clicca({ azione: 'invia-carta' });
@@ -367,5 +375,39 @@ describe('dal disegno alla moderazione', () => {
     const prima = impalcatura.ridisegni();
     impalcatura.scatenaGlobale('keydown', { key: 'q' });
     assert.equal(impalcatura.ridisegni(), prima);
+  });
+});
+
+describe('la carta oggetto nel mazzo', () => {
+  test('e nella collezione e si puo mettere nel mazzo', () => {
+    clicca({ pagina: 'mazzo' });
+    clicca({ filtro: 'oggetto' });
+    assert.equal((html().match(/data-aggiungi="/g) ?? []).length, 1);
+    assert.match(html(), /Goccia di Sangue/);
+  });
+
+  test('su un mazzo pieno va prima fatto spazio', () => {
+    // Si apre esplicitamente il primo mazzo: i test precedenti ne hanno
+    // creato un secondo, e dipendere da quale sia aperto li renderebbe fragili.
+    clicca({ mazzo: 'mazzo-1' });
+    clicca({ filtro: 'tutti' });
+    assert.match(html(), /<span class="numero">20<\/span>/, 'il primo mazzo e pieno');
+
+    clicca({ aggiungi: 'base-21' });
+    assert.match(html(), /gia' 20 carte|gia 20 carte/);
+  });
+
+  test('fatto spazio, la carta oggetto entra e il mazzo resta giocabile', () => {
+    clicca({ togli: 'base-20' });
+    clicca({ aggiungi: 'base-21' });
+    assert.match(html(), /data-togli="base-21"/, 'ora e nel mazzo');
+    assert.match(html(), /<span class="numero">20<\/span>/);
+    assert.match(html(), /Mazzo giocabile/);
+  });
+
+  test('la curva dei costi la conta nella fascia zero', () => {
+    // Costa 0: non rientra nelle cinque colonne da 1 a 5, e non deve
+    // comparire come se costasse 1.
+    assert.equal((html().match(/class="colonna-curva"/g) ?? []).length, 5);
   });
 });

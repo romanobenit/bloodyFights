@@ -1,5 +1,12 @@
 export type Elemento = 'latte' | 'veleno' | 'acqua' | 'fuoco' | 'petrolio' | 'sangue';
-export type TipoCarta = 'mischia' | 'distanza' | 'support';
+/**
+ * I tre tipi che stanno in campo, piu' 'oggetto': una carta che si gioca
+ * dalla mano, ha effetto subito e non occupa nessuna casella.
+ */
+export type TipoCarta = 'mischia' | 'distanza' | 'support' | 'oggetto';
+
+/** Cosa fa una carta oggetto quando viene giocata. */
+export type EffettoOggetto = 'goccia';
 export type Rarita = 'comune' | 'raro' | 'epico' | 'leggendario';
 
 /** Indice del giocatore nello stato. 0 e 1, niente altro. */
@@ -20,8 +27,12 @@ export interface DefinizioneCarta {
   tipo: TipoCarta;
   elemento: Elemento;
   vita: number;
-  /** Per i support e' il valore di cura. */
+  /** Per i support e' il valore di cura. Per gli oggetti non significa niente. */
   attacco: number;
+  /** Testo di presentazione, non incide sul costo. */
+  descrizione: string;
+  /** Solo per le carte oggetto: cosa succede quando le giochi. */
+  effetto?: EffettoOggetto;
   /** null = carta base del gioco, altrimenti id dell'utente che l'ha creata. */
   creatoreId: string | null;
 }
@@ -47,6 +58,7 @@ export interface CartaInCampo {
   vitaMax: number;
   attacco: number;
   costo: number;
+  descrizione: string;
   /** Evocata in questo turno: non attacca e non cura. */
   fresca: boolean;
   /** Per i support: ha gia' scelto cura o goccia in questo turno. */
@@ -81,6 +93,7 @@ export type VoceLog =
   | { tipo: 'pescataScartata'; giocatore: IndiceGiocatore; cartaId: string; motivo: 'manoPiena' }
   | { tipo: 'mazzoEsaurito'; giocatore: IndiceGiocatore }
   | { tipo: 'evocazione'; giocatore: IndiceGiocatore; cartaId: string; casella: number; costo: number }
+  | { tipo: 'oggetto'; giocatore: IndiceGiocatore; cartaId: string; effetto: EffettoOggetto }
   | { tipo: 'riposizionamento'; giocatore: IndiceGiocatore; da: number; a: number; scambio: boolean }
   | { tipo: 'cura'; giocatore: IndiceGiocatore; curatore: number; bersaglio: number; punti: number }
   | { tipo: 'gocciaProdotta'; giocatore: IndiceGiocatore; casella: number }
@@ -116,6 +129,8 @@ export interface StatoPartita {
 
 export type Azione =
   | { tipo: 'evoca'; indiceMano: number; casella: number }
+  /** Le carte oggetto si giocano in qualunque fase del proprio turno. */
+  | { tipo: 'giocaOggetto'; indiceMano: number }
   | { tipo: 'riposiziona'; da: number; a: number }
   | { tipo: 'supportCura'; casella: number; bersaglio: number }
   | { tipo: 'supportGoccia'; casella: number }

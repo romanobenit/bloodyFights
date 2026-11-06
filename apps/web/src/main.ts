@@ -104,6 +104,9 @@ function cartaUtente(): CartaCompleta | null {
     elemento: creata.elemento,
     vita: creata.vita,
     attacco: creata.attacco,
+    // Il `?? ''` copre i profili salvati prima che la descrizione esistesse:
+    // senza, la pagina del mazzo cadeva su un campo assente.
+    descrizione: creata.descrizione ?? '',
     creatoreId: 'io',
     ...statisticheDerivate(creata),
   };
@@ -254,14 +257,13 @@ let dettaglio: CartaInCampo | null = null;
 
 function nuovaPartita(): StatoPartitaConCatalogo {
   const carte = catalogo();
-  const conosciute = new Set(carte.map((c) => c.id));
   const mio = mazzoAttivo(profilo);
 
   // Se il mazzo attivo non e' giocabile si scende in campo con quello base
   // invece di lasciare il giocatore davanti a una schermata bloccata: il
   // messaggio dice cosa e' successo e la pagina Mazzo spiega perche'.
   const mazzoGiocatore =
-    mio && mazzoGiocabile(profilo, mio, conosciute) ? mazzoComeLista(mio) : _mazzoBase();
+    mio && mazzoGiocabile(profilo, mio, carte) ? mazzoComeLista(mio) : _mazzoBase();
 
   esitoRegistrato = false;
 
@@ -774,6 +776,7 @@ function inviaCarta(): void {
 
   const carta: CartaCreata = {
     nome: bozza.nome.trim(),
+    descrizione: bozza.descrizione.trim(),
     tipo: bozza.tipo,
     elemento: bozza.elemento,
     vita: bozza.vita,
@@ -1035,7 +1038,7 @@ function clicSullePagine(bersaglio: Element): boolean {
 
   const daAggiungere = bersaglio.closest<HTMLElement>('[data-aggiungi]');
   if (daAggiungere) {
-    const esito = aggiungiAlMazzo(profilo, mazzoAperto(), daAggiungere.dataset.aggiungi ?? '');
+    const esito = aggiungiAlMazzo(profilo, mazzoAperto(), daAggiungere.dataset.aggiungi ?? '', catalogo());
     messaggio = esito.rifiuto ?? '';
     if (!esito.rifiuto) {
       profilo = sostituisciMazzo(profilo, esito.mazzo);
@@ -1147,6 +1150,16 @@ radice.addEventListener('click', (evento) => {
 
   if (turnoDelBot || stato.fase === 'finita') return;
 
+  const oggetto = bersaglio.closest<HTMLElement>('[data-gioca-oggetto]');
+  if (oggetto) {
+    // Una carta oggetto non chiede una casella: si gioca e basta.
+    selezione = null;
+    if (applica({ tipo: 'giocaOggetto', indiceMano: Number(oggetto.dataset.giocaOggetto) })) {
+      dopoLaMiaMossa();
+    }
+    return;
+  }
+
   const inMano = bersaglio.closest<HTMLElement>('[data-mano]');
   if (inMano) {
     const indice = Number(inMano.dataset.mano);
@@ -1173,6 +1186,16 @@ radice.addEventListener('mouseover', (evento) => {
   const bersaglio = evento.target;
   if (!(bersaglio instanceof Element)) return;
 
+  const oggetto = bersaglio.closest<HTMLElement>('[data-gioca-oggetto]');
+  if (oggetto) {
+    // Una carta oggetto non chiede una casella: si gioca e basta.
+    selezione = null;
+    if (applica({ tipo: 'giocaOggetto', indiceMano: Number(oggetto.dataset.giocaOggetto) })) {
+      dopoLaMiaMossa();
+    }
+    return;
+  }
+
   const inMano = bersaglio.closest<HTMLElement>('[data-mano]');
   if (inMano) {
     const def = stato.catalogo[stato.giocatori[IO].mano[Number(inMano.dataset.mano)]];
@@ -1187,6 +1210,7 @@ radice.addEventListener('mouseover', (evento) => {
       vitaMax: def.vita,
       attacco: def.attacco,
       costo: def.costo,
+      descrizione: def.descrizione,
       fresca: false,
       haAgito: false,
     };
@@ -1231,6 +1255,10 @@ radice.addEventListener('input', (evento) => {
       return;
     case 'nickname-accesso':
       modulo = { ...modulo, nickname: valore };
+      return;
+    case 'descrizione-carta':
+      bozza = { ...bozza, descrizione: valore };
+      rendiMantenendoIlFuoco();
       return;
     case 'nome-carta':
       // La bozza vive finche' non si invia: niente da salvare, ma la pagina

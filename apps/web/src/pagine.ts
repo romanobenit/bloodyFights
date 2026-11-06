@@ -40,7 +40,7 @@ export interface ContestoPagine {
 }
 
 const ELEMENTI: Elemento[] = ['latte', 'veleno', 'acqua', 'fuoco', 'petrolio', 'sangue'];
-const TIPI: TipoCarta[] = ['mischia', 'distanza', 'support'];
+const TIPI: TipoCarta[] = ['mischia', 'distanza', 'support', 'oggetto'];
 
 // ------------------------------------------------------------- navigazione
 
@@ -73,7 +73,7 @@ function cartaCollezione(c: ContestoPagine, carta: CartaCompleta): string {
   return `
     <button type="button" class="carta-collezione ${libere === 0 ? 'esaurita' : ''}"
             data-aggiungi="${carta.id}" style="--elemento: var(--${carta.elemento})"
-            title="${fuggi(carta.nome)} - costo ${carta.costo}, ne possiedi ${possedute(c.profilo, carta.id)}">
+            title="${fuggi(carta.nome)}: ${fuggi(carta.descrizione)}">
       <span class="costo-angolo">${carta.costo}</span>
       <img src="${c.urlSprite(carta.id)}" width="64" height="64" alt="" />
       <span class="nome-carta">${fuggi(carta.nome)}</span>
@@ -81,6 +81,7 @@ function cartaCollezione(c: ContestoPagine, carta: CartaCompleta): string {
         <span class="vita">${carta.vita}</span>
         <span>${carta.attacco}${etichetta}</span>
       </span>
+      <span class="descrizione-corta">${fuggi(carta.descrizione)}</span>
       <span class="possesso">${dentro > 0 ? `${dentro} nel mazzo - ` : ''}${libere} libere</span>
     </button>`;
 }
@@ -130,8 +131,7 @@ function listaMazzo(c: ContestoPagine): string {
 }
 
 function paginaMazzo(c: ContestoPagine): string {
-  const conosciute = new Set(c.catalogo.map((x) => x.id));
-  const errori = erroriMazzo(c.profilo, c.mazzo, conosciute);
+  const errori = erroriMazzo(c.profilo, c.mazzo, c.catalogo);
   const quante = carteNelMazzo(c.mazzo);
   const pieno = quante >= CONFIG.mazzo.carteNelMazzo;
 
@@ -264,102 +264,90 @@ function schema(caselle: Record<number, string>, titolo: string): string {
   return `<figure class="schema"><figcaption>${fuggi(titolo)}</figcaption>${righe.join('')}</figure>`;
 }
 
+/**
+ * TUTORIAL.
+ *
+ * Riscritto in frasi brevi. Il font pixel regge una riga asciutta e affonda
+ * su un periodo lungo: l'occhio deve poter saltare da una frase alla
+ * successiva senza rileggere. Ogni paragrafo dice una cosa sola.
+ */
 function paginaTutorial(): string {
   return `
     <div class="pagina">
       <section class="pannello prosa">
-        <h2>Come si gioca</h2>
+        <h2>In breve</h2>
+        <p>Due giocatori. Turni alterni.</p>
         <p>
-          Due giocatori, turni alterni. Ognuno controlla otto caselle: quattro
-          colonne per due linee. Vince chi porta a zero i
-          ${CONFIG.tabellone.vitaGiocatore} punti vita dell altro.
+          Otto caselle a testa: quattro colonne, due linee. Vince chi porta a
+          zero i ${CONFIG.tabellone.vitaGiocatore} punti vita dell altro.
         </p>
+        <p>La posizione conta quanto le statistiche.</p>
+        ${schema({ 0: 'mischia', 1: 'mischia', 5: 'distanza' }, 'Prima linea sopra, seconda sotto')}
+        <p>Una carta da mischia in seconda linea non attacca. Resta nascosta.</p>
+        <p>Una carta a distanza invece colpisce scavalcando, al riparo.</p>
         <p>
-          La posizione conta quanto le statistiche. Una carta da mischia in
-          seconda linea non attacca: resta nascosta e inattiva. Una carta a
-          distanza invece colpisce scavalcando, al riparo dalla prima linea.
+          Le colonne si fronteggiano a specchio. La tua prima colonna sta
+          davanti alla quarta dell avversario.
         </p>
-        ${schema({ 0: 'mischia', 1: 'mischia', 5: 'distanza' }, 'Il tuo schieramento: prima linea sopra, seconda sotto')}
-        <p>
-          Le colonne si fronteggiano a specchio: la tua prima colonna sta
-          davanti alla quarta dell avversario. Ogni carta attacca la propria
-          colonna, mai di sbieco.
-        </p>
+        <p>Ogni carta attacca la propria colonna. Mai di sbieco.</p>
       </section>
 
       <section class="pannello prosa">
-        <h2>Le quattro fasi del turno</h2>
-        <p>
-          A inizio turno ricevi una goccia di sangue e peschi una carta. Poi si
-          svolgono quattro fasi nell ordine, senza tornare indietro.
-        </p>
+        <h2>Il turno</h2>
+        <p>Si apre con una goccia di sangue e una carta pescata.</p>
+        <p>Poi quattro fasi, in ordine. Non si torna indietro.</p>
 
         <h3>1. Evocazione</h3>
-        <p>
-          Giochi dalla mano quante carte vuoi, finche hai gocce da spendere e
-          caselle libere. Una carta appena evocata e <em>fresca</em>: non
-          attacca e non cura nel turno in cui entra in campo.
-        </p>
+        <p>Giochi quante carte vuoi, finche hai gocce e caselle libere.</p>
+        <p>Una carta appena evocata e <em>fresca</em>: non attacca e non cura.</p>
+        <p>Diventa operativa dal turno dopo.</p>
 
         <h3>2. Riposizionamento</h3>
-        <p>
-          Una sola azione per turno: scambi due tue carte, oppure ne sposti una
-          su una casella libera. E il modo con cui una carta da mischia
-          parcheggiata dietro sale in prima linea.
-        </p>
+        <p>Una sola mossa per turno.</p>
+        <p>Scambi due tue carte, oppure ne sposti una su una casella libera.</p>
         ${schema({ 0: 'vuota', 4: 'mischia ->' }, 'La mischia sale in prima linea')}
 
         <h3>3. Support</h3>
-        <p>
-          Per ogni carta support in campo e non fresca scegli: curare un
-          alleato di tanti punti quanto il suo attacco, oppure produrre una
-          goccia di sangue. Le due cose si escludono.
-        </p>
+        <p>Ogni support in campo sceglie: cura un alleato, oppure fa una goccia.</p>
+        <p>Cura di tanti punti quanto il suo attacco. Le due cose si escludono.</p>
 
         <h3>4. Attacco</h3>
-        <p>
-          Tutte le tue carte non fresche attaccano insieme la propria colonna.
-          Il difensore non risponde: subisce il danno senza infliggerne.
-        </p>
-        <p>
-          Ogni colpo segue una cascata: prima linea avversaria, se e vuota
-          seconda linea, se sono vuote entrambe il colpo arriva al giocatore.
-          Il danno in eccesso non trabocca sulla carta dietro.
-        </p>
+        <p>Tutte le tue carte non fresche attaccano insieme.</p>
+        <p>Il difensore non risponde. Subisce e basta.</p>
+        <p>Il colpo cerca la prima linea. Se e vuota, la seconda.</p>
+        <p>Se sono vuote entrambe, arriva al giocatore.</p>
         ${schema({ 0: 'bersaglio', 4: '(al riparo)' }, 'Si colpisce la prima linea finche c e')}
+        <p>Il danno in eccesso non trabocca sulla carta dietro.</p>
       </section>
 
       <section class="pannello prosa">
-        <h2>Il ciclo elementale</h2>
-        <p>Cinque elementi formano una catena, il sesto sta fuori.</p>
+        <h2>Gli elementi</h2>
+        <p>Cinque elementi in catena. Il sesto sta fuori.</p>
         <p class="catena">latte &rarr; veleno &rarr; acqua &rarr; fuoco &rarr; petrolio</p>
+        <p>Chi ha il vantaggio infligge il 50% in piu.</p>
+        <p>Il petrolio fa eccezione: +20%, ma contro tre elementi su sei.</p>
+        <p>Il fuoco e immune al petrolio. Il sangue e neutro da entrambi i lati.</p>
         <p>
-          Chi ha il vantaggio infligge il 50% di danno in piu. Il petrolio fa
-          eccezione: ha un vantaggio piu ampio ma piu debole, il 20% contro
-          latte, veleno e acqua, mentre il fuoco ne e immune. Il sangue e
-          neutro in entrambe le direzioni.
-        </p>
-        <p>
-          Il vantaggio agisce <strong>solo sul danno inflitto</strong>: chi e in
-          svantaggio non subisce di piu, colpisce solo di meno. Serve a far
-          pesare lo schieramento senza che il matchup decida la partita.
+          Il vantaggio agisce <strong>solo sul danno inflitto</strong>. Chi e in
+          svantaggio non subisce di piu: colpisce di meno.
         </p>
       </section>
 
       <section class="pannello prosa">
-        <h2>L economia</h2>
-        <p>
-          Una goccia a turno, che si accumula fino a
-          ${CONFIG.economia.tettoGocce}. Evocare costa da 1 a 5 gocce, e il
-          costo non lo sceglie chi crea la carta: lo calcola una formula sulle
-          statistiche.
-        </p>
-        <p>
-          Con l accumulo il turno n ti mette a disposizione n gocce se non hai
-          speso nulla: la prima carta da 5 arriva al turno 5. Il tetto evita
-          che qualcuno passi dieci turni fermo per poi schierare mezzo mazzo in
-          una volta.
-        </p>
+        <h2>Le gocce</h2>
+        <p>Una goccia a turno. Si accumulano fino a ${CONFIG.economia.tettoGocce}.</p>
+        <p>Evocare costa da 1 a 5 gocce.</p>
+        <p>Il costo non lo sceglie chi crea la carta. Lo calcola una formula.</p>
+        <p>Al turno n hai n gocce, se non hai speso niente.</p>
+        <p>La prima carta da 5 arriva cosi al turno 5.</p>
+        <p>Il tetto evita che qualcuno stia fermo dieci turni e poi svuoti la mano.</p>
+      </section>
+
+      <section class="pannello prosa">
+        <h2>Le carte oggetto</h2>
+        <p>Non vanno in campo. Si giocano dalla mano e fanno effetto subito.</p>
+        <p>Si possono giocare in qualunque fase del tuo turno.</p>
+        <p>La Goccia di Sangue costa 0 e ti da una goccia.</p>
         <p>
           <a class="bottone" href="#gioca" data-pagina="gioca">Prova contro il bot</a>
         </p>

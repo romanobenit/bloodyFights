@@ -96,6 +96,7 @@ const SIMBOLO_TIPO: Record<string, string> = {
   mischia: 'Mischia',
   distanza: 'Distanza',
   support: 'Support',
+  oggetto: 'Oggetto',
 };
 
 export function fuggi(testo: string): string {
@@ -372,26 +373,36 @@ function mano(s: Schermata): string {
   const mio = s.stato.giocatori[s.io];
   if (mio.mano.length === 0) return '<p class="nota">Mano vuota.</p>';
 
-  const mioTurno = s.stato.turnoDi === s.io && s.stato.fase === 'evocazione';
+  const mioTurno = s.stato.turnoDi === s.io && s.stato.fase !== 'finita';
+  const inEvocazione = mioTurno && s.stato.fase === 'evocazione';
 
   const carte = mio.mano.map((cartaId, indice) => {
     const def = s.stato.catalogo[cartaId];
     if (!def) return '';
+
+    const oggetto = def.tipo === 'oggetto';
     const pagabile = def.costo <= mio.gocce;
+    // Le creature si schierano solo in fase di evocazione; le carte oggetto
+    // si giocano in qualunque fase del proprio turno.
+    const giocabile = pagabile && (oggetto ? mioTurno : inEvocazione);
     const scelta = s.selezione?.tipo === 'mano' && s.selezione.indice === indice;
     const etichetta = def.tipo === 'support' ? 'cura' : 'atk';
 
+    const attributo = oggetto ? `data-gioca-oggetto="${indice}"` : `data-mano="${indice}"`;
+    // Classi filtrate e non concatenate: due ternari di fila lasciano doppi
+    // spazi, e un selettore come ".carta-mano.scelta" smette di combaciare.
+    const classi = ['carta-mano', oggetto ? 'oggetto' : '', scelta ? 'scelta' : ''].filter(Boolean);
+
     return `
-      <button type="button" class="carta-mano ${scelta ? 'scelta' : ''}"
-              data-mano="${indice}" ${mioTurno && pagabile ? '' : 'disabled'}
+      <button type="button" class="${classi.join(' ')}"
+              ${attributo} ${giocabile ? '' : 'disabled'}
               style="--elemento: var(--${def.elemento})"
-              title="${fuggi(def.nome)} - costo ${def.costo}">
+              title="${fuggi(def.nome)} - ${fuggi(def.descrizione)}">
         <img src="${s.urlSprite(def.id)}" width="96" height="96" alt="" />
         <div class="nome-carta">${fuggi(def.nome)}</div>
-        <div class="tipo-elemento">${SIMBOLO_TIPO[def.tipo]} - ${def.elemento}</div>
+        <div class="tipo-elemento">${SIMBOLO_TIPO[def.tipo]}${oggetto ? '' : ` - ${def.elemento}`}</div>
         <div class="riga-stat">
-          <span class="vita">${def.vita}</span>
-          <span>${def.attacco}${etichetta === 'cura' ? '+' : ''}</span>
+          ${oggetto ? '<span class="usa">GIOCA</span>' : `<span class="vita">${def.vita}</span><span>${def.attacco}${etichetta === 'cura' ? '+' : ''}</span>`}
           <span class="costo">${def.costo}</span>
         </div>
       </button>`;
@@ -463,6 +474,11 @@ export function descriviVoce(voce: VoceLog, s: Schermata): { testo: string; rili
         testo: `${chi(voce.giocatore)}: ${nomeIn(voce.giocatore, voce.curatore)} cura ${voce.punti} a ${nomeIn(voce.giocatore, voce.bersaglio)}.`,
         rilievo: false,
       };
+    case 'oggetto':
+      return {
+        testo: `${chi(voce.giocatore)} gioca ${nomeCarta(voce.cartaId)}: +1 goccia.`,
+        rilievo: false,
+      };
     case 'gocciaProdotta':
       return { testo: `${chi(voce.giocatore)}: un support produce 1 goccia.`, rilievo: false };
     case 'attaccoSaltato':
@@ -509,6 +525,7 @@ function dettaglio(s: Schermata): string {
     <div class="dettaglio" style="--elemento: var(--${istanza.elemento})">
       <img src="${s.urlSprite(istanza.cartaId)}" width="192" height="192" alt="" />
       <div class="nome-carta">${fuggi(istanza.nome)}</div>
+      ${istanza.descrizione ? `<p class="descrizione">${fuggi(istanza.descrizione)}</p>` : ''}
       <dl>
         <dt>Tipo</dt><dd>${SIMBOLO_TIPO[istanza.tipo]}</dd>
         <dt>Elemento</dt><dd>${istanza.elemento}</dd>

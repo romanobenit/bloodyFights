@@ -38,21 +38,42 @@ export interface OpzioniNuovaPartita {
 
 // ---------------------------------------------------------------- validazione
 
-export function validaMazzo(mazzo: readonly string[], carteConosciute: ReadonlySet<string>): string[] {
+/**
+ * Quante copie della stessa carta stanno in un mazzo.
+ *
+ * Dipende dal costo: le carte economiche si possono ripetere di piu'. Con due
+ * sole copie una carta da 1 goccia non riusciva a definire un mazzo, perche'
+ * due carte su venti si pescano troppo di rado.
+ */
+export function copieMassime(costo: number): number {
+  return CONFIG.mazzo.copieMassimePerCosto[costo] ?? CONFIG.mazzo.copieMassimeStessaCarta;
+}
+
+/** Il minimo indispensabile che validaMazzo deve sapere di una carta. */
+export interface CartaPerMazzo {
+  id: string;
+  costo: number;
+}
+
+export function validaMazzo(mazzo: readonly string[], carte: readonly CartaPerMazzo[]): string[] {
   const errori: string[] = [];
   const m = CONFIG.mazzo;
+  const perId = new Map(carte.map((c) => [c.id, c]));
 
   if (mazzo.length !== m.carteNelMazzo)
     errori.push(`Il mazzo deve contenere esattamente ${m.carteNelMazzo} carte (ne ha ${mazzo.length})`);
 
   const conteggio = new Map<string, number>();
   for (const id of mazzo) {
-    if (!carteConosciute.has(id)) errori.push(`Carta sconosciuta nel mazzo: ${id}`);
+    if (!perId.has(id)) errori.push(`Carta sconosciuta nel mazzo: ${id}`);
     conteggio.set(id, (conteggio.get(id) ?? 0) + 1);
   }
+
   for (const [id, n] of conteggio) {
-    if (n > m.copieMassimeStessaCarta)
-      errori.push(`${id}: ${n} copie, il massimo e' ${m.copieMassimeStessaCarta}`);
+    const carta = perId.get(id);
+    if (!carta) continue;
+    const massimo = copieMassime(carta.costo);
+    if (n > massimo) errori.push(`${id}: ${n} copie, il massimo e' ${massimo}`);
   }
   return errori;
 }
@@ -62,10 +83,9 @@ export function validaMazzo(mazzo: readonly string[], carteConosciute: ReadonlyS
 export function creaPartita(opzioni: OpzioniNuovaPartita): StatoPartitaConCatalogo {
   const catalogo: Catalogo = {};
   for (const c of opzioni.carte) catalogo[c.id] = c;
-  const conosciute = new Set(Object.keys(catalogo));
 
   for (const [i, mazzo] of opzioni.mazzi.entries()) {
-    const errori = validaMazzo(mazzo, conosciute);
+    const errori = validaMazzo(mazzo, opzioni.carte);
     if (errori.length > 0)
       throw new MossaIllegale(`Mazzo del giocatore ${i} non valido: ${errori.join('; ')}`);
   }
@@ -288,6 +308,8 @@ function evoca(stato: StatoPartitaConCatalogo, indiceMano: number, slot: number)
   const cartaId = g.mano[indiceMano];
   const def = stato.catalogo[cartaId];
   if (!def) throw new MossaIllegale(`Carta non nel catalogo della partita: ${cartaId}`);
+  if (def.tipo === 'oggetto')
+    throw new MossaIllegale(`${def.nome} e una carta oggetto: si gioca, non si schiera`);
   if (g.gocce < def.costo)
     throw new MossaIllegale(`Gocce insufficienti: servono ${def.costo}, ne hai ${g.gocce}`);
 
@@ -305,6 +327,7 @@ function evoca(stato: StatoPartitaConCatalogo, indiceMano: number, slot: number)
     vitaMax: def.vita,
     attacco: def.attacco,
     costo: def.costo,
+    descrizione: def.descrizione,
     fresca: true, // non attacca e non cura nel turno in cui entra in campo
     haAgito: false,
   };
@@ -315,6 +338,50 @@ function evoca(stato: StatoPartitaConCatalogo, indiceMano: number, slot: number)
     cartaId: def.id,
     casella: slot,
     costo: def.costo,
+  });
+}
+
+/**
+ * Gioca una carta oggetto dalla mano.
+ *
+ * A differenza dell'evocazione non ha una fase sua: si puo' fare in qualunque
+ * momento del proprio turno. E' il motivo per cui questa funzione non chiama
+ * `esigiFase` ma controlla solo che la partita non sia finita.
+ */
+function giocaOggetto(stato: StatoPartitaConCatalogo, indiceMano: number): void {
+  if (stato.fase === 'finita') throw new MossaIllegale('La partita e finita');
+
+  const g = stato.giocatori[stato.turnoDi];
+  if (!Number.isInteger(indiceMano) || indiceMano < 0 || indiceMano >= g.mano.length)
+    throw new MossaIllegale(`Indice di mano fuori intervallo: ${indiceMano}`);
+
+  const cartaId = g.mano[indiceMano];
+  const def = stato.catalogo[cartaId];
+  if (!def) throw new MossaIllegale(`Carta non nel catalogo della partita: ${cartaId}`);
+  if (def.tipo !== 'oggetto') throw new MossaIllegale(`${def.nome} non e una carta oggetto`);
+  if (g.gocce < def.costo)
+    throw new MossaIllegale(`Gocce insufficienti: servono ${def.costo}, ne hai ${g.gocce}`);
+  if (!def.effetto) throw new MossaIllegale(`${def.nome} non ha un effetto`);
+
+  g.gocce -= def.costo;
+  g.mano.splice(indiceMano, 1);
+  g.cimitero.push(cartaId);
+
+  switch (def.effetto) {
+    case 'goccia':
+      g.gocce = Math.min(CONFIG.economia.tettoGocce, g.gocce + 1);
+      break;
+    default: {
+      const mai: never = def.effetto;
+      throw new MossaIllegale(`Effetto sconosciuto: ${String(mai)}`);
+    }
+  }
+
+  stato.log.push({
+    tipo: 'oggetto',
+    giocatore: stato.turnoDi,
+    cartaId,
+    effetto: def.effetto,
   });
 }
 
@@ -417,6 +484,9 @@ export function applicaAzione(
     case 'evoca':
       evoca(nuovo, azione.indiceMano, azione.casella);
       break;
+    case 'giocaOggetto':
+      giocaOggetto(nuovo, azione.indiceMano);
+      break;
     case 'riposiziona':
       riposiziona(nuovo, azione.da, azione.a);
       break;
@@ -457,10 +527,18 @@ export function azioniLegali(stato: StatoPartitaConCatalogo): Azione[] {
   const g = stato.giocatori[stato.turnoDi];
   const azioni: Azione[] = [{ tipo: 'passaFase' }];
 
+  // Gli oggetti non hanno una fase: si possono giocare sempre.
+  for (let i = 0; i < g.mano.length; i++) {
+    const def = stato.catalogo[g.mano[i]];
+    if (def?.tipo === 'oggetto' && def.costo <= g.gocce) {
+      azioni.push({ tipo: 'giocaOggetto', indiceMano: i });
+    }
+  }
+
   if (stato.fase === 'evocazione') {
     for (let i = 0; i < g.mano.length; i++) {
       const def = stato.catalogo[g.mano[i]];
-      if (!def || def.costo > g.gocce) continue;
+      if (!def || def.tipo === 'oggetto' || def.costo > g.gocce) continue;
       for (let slot = 0; slot < g.tabellone.length; slot++) {
         if (g.tabellone[slot] === null) azioni.push({ tipo: 'evoca', indiceMano: i, casella: slot });
       }

@@ -256,3 +256,70 @@ describe('indicatori di vita e gocce', () => {
     assert.doesNotMatch(disegna(s), /marca-turno/);
   });
 });
+
+describe('carte oggetto nella mano', () => {
+  function conOggetto(fase: 'evocazione' | 'support' = 'evocazione') {
+    const s = schermata();
+    s.stato.giocatori[0].mano = ['base-21', 'base-01'];
+    s.stato.fase = fase;
+    return s;
+  }
+
+  test('si giocano con un attributo proprio: non chiedono una casella', () => {
+    const html = disegna(conOggetto());
+    assert.match(html, /data-gioca-oggetto="0"/);
+    assert.match(html, /data-mano="1"/, 'la creatura resta una carta da schierare');
+  });
+
+  test('restano giocabili anche fuori dalla fase di evocazione', () => {
+    const html = disegna(conOggetto('support'));
+    assert.doesNotMatch(html, /data-gioca-oggetto="0"\s+disabled/);
+    assert.match(html, /data-mano="1"\s+disabled/, 'la creatura invece no');
+  });
+
+  test('mostrano GIOCA al posto di vita e attacco', () => {
+    const html = disegna(conOggetto());
+    assert.match(html, /class="usa">GIOCA</);
+  });
+
+  test('non si possono giocare nel turno dell avversario', () => {
+    const s = conOggetto();
+    s.stato.turnoDi = 1;
+    assert.match(disegna(s), /data-gioca-oggetto="0"\s+disabled/);
+  });
+
+  test('la descrizione compare nel suggerimento', () => {
+    assert.match(disegna(conOggetto()), /title="Goccia di Sangue - Una goccia/);
+  });
+
+  test('il registro racconta la carta giocata', () => {
+    const s = schermata();
+    const descrizione = descriviVoce(
+      { tipo: 'oggetto', giocatore: 0, cartaId: 'base-21', effetto: 'goccia' },
+      s,
+    );
+    assert.match(descrizione!.testo, /Goccia di Sangue.*\+1 goccia/);
+  });
+});
+
+describe('descrizioni', () => {
+  test('il pannello di dettaglio mostra la descrizione della carta', () => {
+    const s = schermata();
+    s.dettaglio = {
+      uid: 'x', cartaId: 'base-01', nome: 'Topo di Fogna', tipo: 'mischia', elemento: 'sangue',
+      vita: 2, vitaMax: 2, attacco: 2, costo: 1, descrizione: 'Morde prima di guardare.',
+      fresca: false, haAgito: false,
+    };
+    assert.match(disegna(s), /class="descrizione">Morde prima di guardare\./);
+  });
+
+  test('una carta senza descrizione non lascia un riquadro vuoto', () => {
+    const s = schermata();
+    s.dettaglio = {
+      uid: 'x', cartaId: 'base-01', nome: 'Senza', tipo: 'mischia', elemento: 'sangue',
+      vita: 2, vitaMax: 2, attacco: 2, costo: 1, descrizione: '',
+      fresca: false, haAgito: false,
+    };
+    assert.doesNotMatch(disegna(s), /class="descrizione"/);
+  });
+});

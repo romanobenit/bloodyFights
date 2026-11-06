@@ -1,4 +1,4 @@
-import { CONFIG, validaMazzo, type CartaCompleta } from '@bloodyfights/motore';
+import { CONFIG, copieMassime, validaMazzo, type CartaCompleta } from '@bloodyfights/motore';
 import type { CartaCreata } from './editor.ts';
 import type { Decisione } from './moderazione.ts';
 
@@ -37,23 +37,34 @@ export interface Profilo {
 export const MAZZI_MASSIMI = 3;
 
 /**
- * COPIE CONCESSE A UN NUOVO PROFILO: 2 per carta, non 1.
+ * COPIE CONCESSE A UN NUOVO PROFILO.
  *
  * Il cap. 12 propone "tutte e 20, cosi' un nuovo iscritto puo' comporre subito
  * un mazzo legale". Con una copia sola pero' esiste UN SOLO mazzo legale
  * possibile - venti carte diverse, nessuna scelta - e l'editor del mazzo non
- * avrebbe niente da fare. Con due copie le scelte diventano vere.
- * Da confermare: incide sull'economia dei bauli della fase 5.
+ * avrebbe niente da fare.
+ *
+ * Quante copie dipende dalla carta: tante quante se ne possono mettere nel
+ * mazzo, cosi' la collezione non promette copie inutilizzabili. Le carte
+ * oggetto fanno eccezione e si concedono a mani basse: costano 0 e servono a
+ * sperimentare. Da confermare: incide sull'economia dei bauli della fase 5.
  */
-export const COPIE_INIZIALI = 2;
+export const COPIE_OGGETTO = 10;
+
+export function copieConcesse(carta: CartaCompleta): number {
+  if (carta.tipo === 'oggetto') return COPIE_OGGETTO;
+  return copieMassime(carta.costo);
+}
 
 export function profiloIniziale(carte: readonly CartaCompleta[], nickname = 'Ospite'): Profilo {
   const collezione: Record<string, number> = {};
-  for (const carta of carte) collezione[carta.id] = COPIE_INIZIALI;
+  for (const carta of carte) collezione[carta.id] = copieConcesse(carta);
 
-  // Un primo mazzo gia' legale: una copia di ciascuna delle 20 carte base.
+  // Un primo mazzo gia' legale: una copia di ciascuna delle 20 creature.
+  // Le carte oggetto restano fuori, o il mazzo sforerebbe le 20 carte.
   const carteMazzo: Record<string, number> = {};
-  for (const carta of carte.slice(0, CONFIG.mazzo.carteNelMazzo)) carteMazzo[carta.id] = 1;
+  for (const carta of carte.filter((c) => c.tipo !== 'oggetto').slice(0, CONFIG.mazzo.carteNelMazzo))
+    carteMazzo[carta.id] = 1;
 
   return {
     nickname,
@@ -108,14 +119,22 @@ export interface EsitoMossa {
   rifiuto: string | null;
 }
 
-export function aggiungiAlMazzo(profilo: Profilo, mazzo: Mazzo, cartaId: string): EsitoMossa {
+export function aggiungiAlMazzo(
+  profilo: Profilo,
+  mazzo: Mazzo,
+  cartaId: string,
+  catalogo: readonly CartaCompleta[],
+): EsitoMossa {
   const giaDentro = nelMazzo(mazzo, cartaId);
+  const carta = catalogo.find((c) => c.id === cartaId);
+  if (!carta) return { mazzo, rifiuto: 'Carta sconosciuta' };
 
   if (carteNelMazzo(mazzo) >= CONFIG.mazzo.carteNelMazzo)
     return { mazzo, rifiuto: `Il mazzo ha gia' ${CONFIG.mazzo.carteNelMazzo} carte` };
 
-  if (giaDentro >= CONFIG.mazzo.copieMassimeStessaCarta)
-    return { mazzo, rifiuto: `Massimo ${CONFIG.mazzo.copieMassimeStessaCarta} copie della stessa carta` };
+  const massimo = copieMassime(carta.costo);
+  if (giaDentro >= massimo)
+    return { mazzo, rifiuto: `Massimo ${massimo} copie di ${carta.nome}` };
 
   // "2 copie, e solo se le possiedi entrambe" (cap. 4.2).
   if (disponibili(profilo, mazzo, cartaId) <= 0)
@@ -169,9 +188,9 @@ export function registraEsito(profilo: Profilo, vinto: boolean): Profilo {
 export function erroriMazzo(
   profilo: Profilo,
   mazzo: Mazzo,
-  carteConosciute: ReadonlySet<string>,
+  catalogo: readonly CartaCompleta[],
 ): string[] {
-  const errori = validaMazzo(mazzoComeLista(mazzo), carteConosciute);
+  const errori = validaMazzo(mazzoComeLista(mazzo), catalogo);
 
   for (const [cartaId, quante] of Object.entries(mazzo.carte)) {
     if (quante > possedute(profilo, cartaId))
@@ -184,7 +203,7 @@ export function erroriMazzo(
 export function mazzoGiocabile(
   profilo: Profilo,
   mazzo: Mazzo,
-  carteConosciute: ReadonlySet<string>,
+  catalogo: readonly CartaCompleta[],
 ): boolean {
-  return erroriMazzo(profilo, mazzo, carteConosciute).length === 0;
+  return erroriMazzo(profilo, mazzo, catalogo).length === 0;
 }

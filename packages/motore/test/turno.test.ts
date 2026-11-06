@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { CONFIG } from '../src/config.ts';
 import { CARTE_BASE, mazzoBaseCompleto } from '../src/carte-base.ts';
-import { applicaAzione, creaPartita, rigioca, validaMazzo, azioniLegali } from '../src/motore.ts';
+import { applicaAzione, copieMassime, creaPartita, rigioca, validaMazzo, azioniLegali } from '../src/motore.ts';
 import { casella } from '../src/tabellone.ts';
 import { scenario, metti, cartaIn } from './aiuto.ts';
 import type { Azione } from '../src/types.ts';
@@ -32,20 +32,33 @@ describe('apertura della partita', () => {
   });
 
   test('un mazzo non da 20 carte non e giocabile', () => {
-    const conosciute = new Set(CARTE_BASE.map((c) => c.id));
-    assert.ok(validaMazzo(CARTE_BASE.slice(0, 19).map((c) => c.id), conosciute).length > 0);
-    assert.equal(validaMazzo(mazzoBaseCompleto(), conosciute).length, 0);
+    assert.ok(validaMazzo(mazzoBaseCompleto().slice(0, 19), CARTE_BASE).length > 0);
+    assert.equal(validaMazzo(mazzoBaseCompleto(), CARTE_BASE).length, 0);
   });
 
-  test('piu di 2 copie della stessa carta non sono ammesse', () => {
-    const conosciute = new Set(CARTE_BASE.map((c) => c.id));
-    const mazzo = [
-      ...new Array(3).fill('base-01'),
-      ...CARTE_BASE.slice(1, 18).map((c) => c.id),
-    ];
+  test('le carte da 1 goccia si possono mettere in tre copie', () => {
+    // base-01 costa 1: tre copie sono ammesse, quattro no.
+    assert.equal(copieMassime(1), 3);
+    const tre = [...new Array(3).fill('base-01'), ...mazzoBaseCompleto().slice(1, 18)];
+    assert.equal(tre.length, 20);
+    assert.deepEqual(validaMazzo(tre, CARTE_BASE), []);
+
+    const quattro = [...new Array(4).fill('base-01'), ...mazzoBaseCompleto().slice(1, 17)];
+    assert.equal(quattro.length, 20);
+    assert.ok(validaMazzo(quattro, CARTE_BASE).some((e) => /copie/.test(e)));
+  });
+
+  test('le carte piu care restano a due copie', () => {
+    // base-19 costa 5.
+    assert.equal(copieMassime(5), 2);
+    const mazzo = [...new Array(3).fill('base-19'), ...mazzoBaseCompleto().slice(0, 17)];
     assert.equal(mazzo.length, 20);
-    const errori = validaMazzo(mazzo, conosciute);
-    assert.ok(errori.some((e) => /copie/.test(e)));
+    assert.ok(validaMazzo(mazzo, CARTE_BASE).some((e) => /base-19.*massimo e' 2/.test(e)));
+  });
+
+  test('una carta sconosciuta al catalogo viene segnalata', () => {
+    const mazzo = [...new Array(20).fill('carta-inventata')];
+    assert.ok(validaMazzo(mazzo, CARTE_BASE).some((e) => /sconosciuta/.test(e)));
   });
 });
 
@@ -290,6 +303,102 @@ describe('azioni legali', () => {
     s.giocatori[0].gocce = 10;
     for (const azione of azioniLegali(s)) {
       assert.doesNotThrow(() => applicaAzione(s, azione), `azione ${JSON.stringify(azione)}`);
+    }
+  });
+});
+
+describe('carte oggetto', () => {
+  const OGGETTO = 'base-21';
+
+  function conOggettoInMano(fase: 'evocazione' | 'riposizionamento' | 'support' = 'evocazione') {
+    const s = scenario({ primo: 0 });
+    s.giocatori[0].mano = [OGGETTO, 'base-01'];
+    s.fase = fase;
+    return s;
+  }
+
+  test('costa zero e da una goccia: giocarla fa guadagnare', () => {
+    let s = conOggettoInMano();
+    const prima = s.giocatori[0].gocce;
+    s = applicaAzione(s, { tipo: 'giocaOggetto', indiceMano: 0 });
+    assert.equal(s.giocatori[0].gocce, prima + 1);
+  });
+
+  test('esce dalla mano e finisce nel cimitero', () => {
+    let s = conOggettoInMano();
+    s = applicaAzione(s, { tipo: 'giocaOggetto', indiceMano: 0 });
+    assert.equal(s.giocatori[0].mano.length, 1);
+    assert.equal(s.giocatori[0].mano[0], 'base-01');
+    assert.ok(s.giocatori[0].cimitero.includes(OGGETTO));
+  });
+
+  test('non occupa nessuna casella', () => {
+    let s = conOggettoInMano();
+    s = applicaAzione(s, { tipo: 'giocaOggetto', indiceMano: 0 });
+    assert.equal(s.giocatori[0].tabellone.filter(Boolean).length, 0);
+  });
+
+  test('si puo giocare in QUALUNQUE fase del proprio turno', () => {
+    for (const fase of ['evocazione', 'riposizionamento', 'support'] as const) {
+      const s = conOggettoInMano(fase);
+      const dopo = applicaAzione(s, { tipo: 'giocaOggetto', indiceMano: 0 });
+      assert.equal(dopo.giocatori[0].gocce, s.giocatori[0].gocce + 1, `fase ${fase}`);
+      assert.equal(dopo.fase, fase, 'la fase non cambia');
+    }
+  });
+
+  test('non si puo giocare a partita finita', () => {
+    const s = conOggettoInMano();
+    s.fase = 'finita';
+    assert.throws(() => applicaAzione(s, { tipo: 'giocaOggetto', indiceMano: 0 }), /finita/);
+  });
+
+  test('il tetto delle gocce vale anche per l oggetto', () => {
+    let s = conOggettoInMano();
+    s.giocatori[0].gocce = CONFIG.economia.tettoGocce;
+    s = applicaAzione(s, { tipo: 'giocaOggetto', indiceMano: 0 });
+    assert.equal(s.giocatori[0].gocce, CONFIG.economia.tettoGocce, 'l eccedenza e persa');
+  });
+
+  test('una creatura non si puo giocare come oggetto, e viceversa', () => {
+    const s = conOggettoInMano();
+    assert.throws(() => applicaAzione(s, { tipo: 'giocaOggetto', indiceMano: 1 }), /non e una carta oggetto/);
+    assert.throws(
+      () => applicaAzione(s, { tipo: 'evoca', indiceMano: 0, casella: 0 }),
+      /si gioca, non si schiera/,
+    );
+  });
+
+  test('un indice di mano inventato viene rifiutato', () => {
+    const s = conOggettoInMano();
+    assert.throws(() => applicaAzione(s, { tipo: 'giocaOggetto', indiceMano: 9 }), /fuori intervallo/);
+  });
+
+  test('il registro racconta cosa e successo', () => {
+    let s = conOggettoInMano();
+    s = applicaAzione(s, { tipo: 'giocaOggetto', indiceMano: 0 });
+    const voce = s.log.find((v) => v.tipo === 'oggetto');
+    assert.ok(voce);
+    assert.equal(voce.cartaId, OGGETTO);
+    assert.equal(voce.effetto, 'goccia');
+  });
+
+  test('e fra le azioni legali in ogni fase, e solo per chi ce l ha in mano', () => {
+    for (const fase of ['evocazione', 'riposizionamento', 'support'] as const) {
+      const s = conOggettoInMano(fase);
+      const legali = azioniLegali(s).filter((a) => a.tipo === 'giocaOggetto');
+      assert.equal(legali.length, 1, `fase ${fase}`);
+    }
+    const senza = scenario({ primo: 0 });
+    senza.giocatori[0].mano = ['base-01'];
+    assert.equal(azioniLegali(senza).filter((a) => a.tipo === 'giocaOggetto').length, 0);
+  });
+
+  test('ogni azione proposta resta applicabile anche con gli oggetti', () => {
+    const s = conOggettoInMano();
+    s.giocatori[0].gocce = 10;
+    for (const azione of azioniLegali(s)) {
+      assert.doesNotThrow(() => applicaAzione(s, azione), JSON.stringify(azione));
     }
   });
 });

@@ -27,11 +27,19 @@ export const CONFIG = {
     attaccoMax: 10,
     potenzaMax: 20,
     nomeMaxCaratteri: 24,
+    descrizioneMaxCaratteri: 90,
   },
 
   mazzo: {
     carteNelMazzo: 20,
     copieMassimeStessaCarta: 2,
+    /**
+     * Deroga al limite di copie, per costo della carta.
+     * Le carte economiche si possono ripetere di piu': sono l'ossatura di un
+     * mazzo aggressivo, e due sole copie le rendevano ininfluenti.
+     * Modifica al cap. 4.2 da annotare nelle specifiche.
+     */
+    copieMassimePerCosto: { 0: 3, 1: 3 } as Record<number, number>,
     manoIniziale: 4,
     pescataPerTurno: 1,
     manoMassima: 7,
@@ -61,8 +69,10 @@ export const CONFIG = {
   /** Pesi della formula del costo (cap. 5.2). Questa e' la tabella da ritarare. */
   costo: {
     pesoVita: 1.0,
-    pesoAttacco: { mischia: 1.0, distanza: 1.5, support: 1.0 },
+    pesoAttacco: { mischia: 1.0, distanza: 1.5, support: 1.0, oggetto: 0 },
     bonusSupport: 4,
+    /** Le carte oggetto non passano dalla formula: costano 0 e basta. */
+    costoOggetto: 0,
     bonusElemento: {
       petrolio: 2,
       fuoco: 1,

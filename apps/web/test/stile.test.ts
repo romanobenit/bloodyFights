@@ -20,7 +20,11 @@ const QUI = dirname(fileURLToPath(import.meta.url));
 let css = '';
 
 before(async () => {
-  css = await readFile(join(QUI, '../src/stile.css'), 'utf8');
+  const grezzo = await readFile(join(QUI, '../src/stile.css'), 'utf8');
+  // I commenti vengono tolti: questi test leggono DICHIARAZIONI, non prosa.
+  // Un commento che spiega perche' non si usa max-width conteneva la parola
+  // "max-width", e faceva fallire il controllo che la cercava.
+  css = grezzo.replace(/\/\*[\s\S]*?\*\//g, '');
 });
 
 /** Il corpo di una regola, dato il suo selettore. */
@@ -141,5 +145,92 @@ describe('sovrapposizioni a schermo intero', () => {
 
   test('il tetto di larghezza della colonna esclude le sovrapposizioni', () => {
     assert.match(css, /#radice > \*:not\(\.esito\)/);
+  });
+});
+
+describe('font', () => {
+  test('ogni testo usa un font pixel: nessun sans-serif di sistema', () => {
+    const famiglie = dichiarazioni('font-family');
+    assert.ok(famiglie.length > 0);
+    for (const valore of famiglie) {
+      if (valore.startsWith('var(')) continue;
+      assert.match(
+        valore,
+        /Press Start 2P|Silkscreen|monospace/,
+        `font non pixel in uso: ${valore}`,
+      );
+      assert.doesNotMatch(valore, /system-ui|ui-sans-serif|Segoe UI|sans-serif/, valore);
+    }
+  });
+
+  test('le due variabili puntano a font pixel diversi, per usi diversi', () => {
+    const radice = regola(':root');
+    assert.match(radice, /--pixel:\s*'Press Start 2P'/);
+    assert.match(radice, /--prosa:\s*'Silkscreen'/);
+  });
+
+  test('i pixel delle lettere non vengono arrotondati', () => {
+    assert.match(css, /-webkit-font-smoothing:\s*none/);
+  });
+
+  test('i testi lunghi hanno interlinea e righe corte', () => {
+    const prosa = regola('\\.prosa');
+    assert.match(prosa, /line-height:\s*2(\.\d+)?/, 'un font pixel ha bisogno di respiro');
+    const paragrafo = regola('\\.prosa p');
+    assert.match(paragrafo, /max-width:\s*5\dch/, 'righe piu corte del solito');
+  });
+});
+
+describe('schermi stretti', () => {
+  test('ci sono soglie per telefono', () => {
+    assert.match(css, /@media \(max-width: 700px\)/);
+    assert.match(css, /@media \(max-width: 480px\)/);
+  });
+
+  test('la tela resta a multipli INTERI di 32 a ogni soglia', () => {
+    // E' la regola che tiene in piedi tutto lo stile: a 3,5x i pixel si
+    // sfocano. Nessuna scala puo essere frazionaria.
+    const scale = [...css.matchAll(/--scala:\s*([\d.]+)/g)].map((m) => Number(m[1]));
+    assert.ok(scale.length >= 3, `trovate solo ${scale.length} scale`);
+    for (const scala of scale) {
+      assert.ok(Number.isInteger(scala), `scala frazionaria: ${scala}`);
+      assert.ok(scala >= 6 && scala <= 16, `scala fuori scala: ${scala}`);
+    }
+  });
+
+  test('la tela non viene mai dimensionata in percentuale', () => {
+    const tela = regola('\\.tela');
+    assert.match(tela, /width:\s*calc\(32px \* var\(--scala\)\)/);
+    // Il confine iniziale serve: "max-width" contiene "width".
+    assert.doesNotMatch(tela, /(^|[\s;{])width:\s*\d+%/);
+    assert.doesNotMatch(tela, /max-width/, 'un tetto in percentuale romperebbe la scala intera');
+  });
+
+  test('il tabellone sta in 360px: quattro colonne piu i vuoti', () => {
+    const stretto = css.slice(css.indexOf('@media (max-width: 480px)'));
+    const larghezza = Number(stretto.match(/--slot-larghezza:\s*(\d+)px/)?.[1]);
+    assert.ok(larghezza > 0, 'la soglia stretta ridefinisce la larghezza');
+    // 4 caselle + 3 spazi + i margini della pagina e del pannello.
+    assert.ok(4 * larghezza + 3 * 5 + 36 <= 360, `servirebbero ${4 * larghezza + 51}px`);
+  });
+
+  test('le proporzioni della carta restano quelle delle carte da gioco', () => {
+    for (const blocco of css.split('@media').slice(0)) {
+      const l = Number(blocco.match(/--slot-larghezza:\s*(\d+)px/)?.[1]);
+      const a = Number(blocco.match(/--slot-altezza:\s*(\d+)px/)?.[1]);
+      if (!l || !a) continue;
+      const rapporto = l / a;
+      assert.ok(Math.abs(rapporto - 0.714) < 0.03, `rapporto ${rapporto.toFixed(3)} su ${l}x${a}`);
+    }
+  });
+
+  test('niente scorre in orizzontale per caso: solo menu e mano, apposta', () => {
+    const scorrimenti = [...css.matchAll(/overflow-x:\s*auto/g)];
+    assert.ok(scorrimenti.length >= 2 && scorrimenti.length <= 4, 'scorrimenti orizzontali inattesi');
+  });
+
+  test('i bersagli da toccare sono abbastanza grandi', () => {
+    const stretto = css.slice(css.indexOf('@media (max-width: 480px)'));
+    assert.match(stretto, /min-height:\s*3[0-9]px/, 'un dito non ha la precisione del puntatore');
   });
 });

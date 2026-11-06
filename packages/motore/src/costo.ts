@@ -22,6 +22,10 @@ export interface StatistichePerCosto {
  * arrotonda qui perche' arrotondare due volte sposta le carte di fascia.
  */
 export function calcolaPotenza(s: StatistichePerCosto): number {
+  // Le carte oggetto non hanno vita ne' attacco in campo: la formula non le
+  // descrive, e inventarle un punteggio significherebbe fingere.
+  if (s.tipo === 'oggetto') return 0;
+
   const pesoAttacco = CONFIG.costo.pesoAttacco[s.tipo];
   const bonusElemento = CONFIG.costo.bonusElemento[s.elemento];
   const bonusSupport = s.tipo === 'support' ? CONFIG.costo.bonusSupport : 0;
@@ -34,6 +38,11 @@ export function calcolaPotenza(s: StatistichePerCosto): number {
 }
 
 /** Fascia di costo in cui cade la potenza. Oltre il tetto non esiste costo. */
+export function calcolaCostoDiTipo(potenza: number, tipo: TipoCarta): number {
+  if (tipo === 'oggetto') return CONFIG.costo.costoOggetto;
+  return calcolaCosto(potenza);
+}
+
 export function calcolaCosto(potenza: number): number {
   for (const fascia of CONFIG.costo.fasce) {
     if (potenza <= fascia.potenzaMax) return fascia.costo;
@@ -52,7 +61,11 @@ export function calcolaRarita(potenza: number): Rarita {
 
 export function statisticheDerivate(s: StatistichePerCosto): StatisticheDerivate {
   const potenza = calcolaPotenza(s);
-  return { potenza, costo: calcolaCosto(potenza), rarita: calcolaRarita(potenza) };
+  return {
+    potenza,
+    costo: calcolaCostoDiTipo(potenza, s.tipo),
+    rarita: calcolaRarita(potenza),
+  };
 }
 
 /**
@@ -65,6 +78,13 @@ export function validaCarta(
 ): EsitoValidazione {
   const errori: string[] = [];
   const c = CONFIG.carte;
+
+  // Le carte oggetto non si creano dall'editor: non passano dalla formula del
+  // costo, quindi non esiste un tetto che impedisca di sbilanciarle.
+  if (s.tipo === 'oggetto') {
+    errori.push('Le carte oggetto non si possono creare');
+    return { valida: false, errori };
+  }
 
   if (s.nome !== undefined) {
     const nome = s.nome.trim();

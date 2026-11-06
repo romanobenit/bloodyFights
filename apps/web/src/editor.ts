@@ -20,6 +20,7 @@ import { fuggi } from './vista.ts';
 
 export interface Bozza {
   nome: string;
+  descrizione: string;
   tipo: TipoCarta;
   elemento: Elemento;
   vita: number;
@@ -32,6 +33,7 @@ export interface Bozza {
 
 export interface CartaCreata {
   nome: string;
+  descrizione: string;
   tipo: TipoCarta;
   elemento: Elemento;
   vita: number;
@@ -82,6 +84,7 @@ export function applicaStrumento(
 export function bozzaIniziale(): Bozza {
   return {
     nome: '',
+    descrizione: '',
     tipo: 'mischia',
     elemento: 'sangue',
     vita: 4,
@@ -129,6 +132,11 @@ export function esaminaBozza(bozza: Bozza): StatoBozza {
 
   const errori = [...esito.errori];
   if (!telaPiena(telaCorrente(bozza.cronologia))) errori.push('La tela e ancora vuota');
+
+  const descrizione = bozza.descrizione.trim();
+  if (descrizione.length === 0) errori.push('Manca la descrizione');
+  if (descrizione.length > CONFIG.carte.descrizioneMaxCaratteri)
+    errori.push(`La descrizione supera i ${CONFIG.carte.descrizioneMaxCaratteri} caratteri`);
 
   return {
     potenza,
@@ -231,6 +239,7 @@ function anteprima(bozza: Bozza, stato: StatoBozza): string {
       <span class="costo-angolo">${stato.costo ?? '!'}</span>
       <canvas data-anteprima width="32" height="32" class="ritratto-grande"></canvas>
       <figcaption class="nome-carta">${fuggi(bozza.nome || 'Senza nome')}</figcaption>
+      ${bozza.descrizione ? `<p class="descrizione">${fuggi(bozza.descrizione)}</p>` : ''}
       <div class="riga-stat">
         <span class="vita">${bozza.vita}</span>
         <span>${bozza.attacco}${etichetta === 'cura' ? '+' : ''}</span>
@@ -286,6 +295,13 @@ export function paginaEditor(c: ContestoEditor): string {
           <span>Nome (max ${CONFIG.carte.nomeMaxCaratteri})</span>
           <input type="text" data-campo="nome-carta" value="${fuggi(bozza.nome)}"
                  maxlength="${CONFIG.carte.nomeMaxCaratteri}" placeholder="Come si chiama" />
+        </label>
+
+        <label class="campo">
+          <span>Descrizione (max ${CONFIG.carte.descrizioneMaxCaratteri})</span>
+          <textarea data-campo="descrizione-carta" rows="2"
+                    maxlength="${CONFIG.carte.descrizioneMaxCaratteri}"
+                    placeholder="Una riga che la racconti">${fuggi(bozza.descrizione)}</textarea>
         </label>
 
         <div class="barra-filtri">${tipi.join('')}</div>
@@ -367,6 +383,7 @@ function cartaGiaInviata(carta: CartaCreata): string {
             <span class="costo-angolo">${carta.costo}</span>
             <canvas data-anteprima width="32" height="32" class="ritratto-grande"></canvas>
             <figcaption class="nome-carta">${fuggi(carta.nome)}</figcaption>
+            ${carta.descrizione ? `<p class="descrizione">${fuggi(carta.descrizione)}</p>` : ''}
             <div class="riga-stat">
               <span class="vita">${carta.vita}</span>
               <span>${carta.attacco}${carta.tipo === 'support' ? '+' : ''}</span>

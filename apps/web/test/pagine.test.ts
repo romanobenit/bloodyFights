@@ -38,7 +38,7 @@ describe('navigazione', () => {
 describe('editor del mazzo', () => {
   test('la collezione mostra tutte le carte, ognuna cliccabile', () => {
     const html = disegnaPagina(contesto());
-    assert.equal((html.match(/data-aggiungi="/g) ?? []).length, 20);
+    assert.equal((html.match(/data-aggiungi="/g) ?? []).length, CARTE_BASE.length);
   });
 
   test('il filtro riduce la collezione a un solo elemento', () => {
@@ -80,6 +80,12 @@ describe('editor del mazzo', () => {
   test('ogni carta nel mazzo si puo togliere con un clic', () => {
     const html = disegnaPagina(contesto());
     assert.equal((html.match(/data-togli="/g) ?? []).length, 20);
+  });
+
+  test('il filtro oggetto mostra le carte oggetto', () => {
+    const html = disegnaPagina(contesto({ filtro: 'oggetto' }));
+    assert.equal((html.match(/data-aggiungi="/g) ?? []).length, 1);
+    assert.match(html, /Goccia di Sangue/);
   });
 
   test('una carta esaurita in collezione e segnalata', () => {

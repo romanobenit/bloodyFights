@@ -15,6 +15,7 @@ function bozzaDisegnata(parziale: Partial<Bozza> = {}): Bozza {
   return {
     ...base,
     nome: 'Bestia di Prova',
+    descrizione: 'Una bestia come tante, ma piu arrabbiata.',
     cronologia: registra(base.cronologia, disegnaPixel(telaCorrente(base.cronologia), { x: 4, y: 4 }, 5)),
     ...parziale,
   };
@@ -197,7 +198,8 @@ describe('pagina dell editor', () => {
 
 describe('carta gia inviata', () => {
   const carta: CartaCreata = {
-    nome: 'Bestia di Prova', tipo: 'mischia', elemento: 'sangue', vita: 4, attacco: 3,
+    nome: 'Bestia di Prova',
+    descrizione: 'Una bestia come tante, ma piu arrabbiata.', tipo: 'mischia', elemento: 'sangue', vita: 4, attacco: 3,
     potenza: 8, costo: 2, rarita: 'comune', pixels: 'A'.repeat(684),
     stato: 'pending', inviataIl: '2026-11-05',
   };
