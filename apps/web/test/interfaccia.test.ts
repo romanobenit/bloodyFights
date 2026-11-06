@@ -269,3 +269,103 @@ describe('il rilascio del dito fuori dalla tela non ridisegna', () => {
     assert.match(html(), /data-azione="annulla"\s+disabled/, 'niente da annullare');
   });
 });
+
+/** Tela finta: ha solo cio che main.ts usa davvero di un canvas. */
+class TelaFinta extends ElementoBase {
+  constructor() {
+    super('canvas', { tela: '' });
+  }
+  hasAttribute(nome: string): boolean {
+    return nome === 'data-tela';
+  }
+  setPointerCapture(): void {}
+  getBoundingClientRect() {
+    return { left: 0, top: 0, width: 384, height: 384 };
+  }
+  getContext() {
+    return {
+      createImageData: (l: number, a: number) => ({ data: new Uint8ClampedArray(l * a * 4) }),
+      putImageData: () => undefined,
+    };
+  }
+}
+
+describe('dal disegno alla moderazione', () => {
+  const tela = new TelaFinta();
+
+  test('un tratto sulla tela sblocca l invio', () => {
+    clicca({ pagina: 'crea' });
+    assert.match(html(), /tela e ancora vuota/);
+
+    // 384 px per 32 pixel: dodici px a pixel. (60,60) cade sul pixel (5,5).
+    impalcatura.radice.scatena('pointerdown', tela, { clientX: 60, clientY: 60, pointerId: 1 });
+    impalcatura.radice.scatena('pointermove', tela, { clientX: 96, clientY: 96, pointerId: 1 });
+    impalcatura.radice.scatena('pointerup', tela, { pointerId: 1 });
+
+    assert.doesNotMatch(html(), /tela e ancora vuota/);
+    assert.doesNotMatch(html(), /data-azione="annulla"\s+disabled/, 'c e qualcosa da annullare');
+  });
+
+  test('con un nome la carta si puo inviare', () => {
+    impalcatura.radice.scatena('input', new ElementoBase('input', { campo: 'nome-carta' }), {});
+    // L'elemento finto non ha `value`: lo si impone come farebbe il campo vero.
+    const campo = Object.assign(new ElementoBase('input', { campo: 'nome-carta' }), {
+      value: 'Bestia di Prova',
+    });
+    impalcatura.radice.scatena('input', campo);
+    assert.doesNotMatch(html(), /data-azione="invia-carta"\s+disabled/);
+
+    clicca({ azione: 'invia-carta' });
+    assert.match(html(), /in moderazione/);
+    assert.match(html(), /Bestia di Prova/);
+  });
+
+  test('la carta compare nella coda di revisione', () => {
+    clicca({ pagina: 'moderazione' });
+    assert.match(html(), /Coda di revisione - 1 carta/);
+    assert.match(html(), /#1 in coda/);
+    assert.match(html(), /data-approva="si"/);
+  });
+
+  test('rifiutarla la toglie dalla collezione e restituisce il tentativo', () => {
+    clicca({ rifiuta: 'plagio' });
+    assert.match(html(), /rifiutata/i);
+    assert.match(html(), /Coda di revisione - 0 carte/);
+    assert.match(html(), /Plagio di un personaggio esistente/);
+
+    clicca({ pagina: 'mazzo' });
+    assert.doesNotMatch(html(), /data-aggiungi="utente-1"/, 'non e piu nella collezione');
+  });
+
+  test('il creatore vede il motivo e puo rifarla', () => {
+    clicca({ pagina: 'crea' });
+    assert.match(html(), /Rifiutata:/);
+    assert.match(html(), /data-azione="rifai-carta"/);
+  });
+
+  test('revocare il rifiuto rimette la carta in coda', () => {
+    clicca({ pagina: 'moderazione' });
+    clicca({ revoca: 'Bestia di Prova' });
+    assert.match(html(), /Coda di revisione - 1 carta/);
+    assert.match(html(), /class="revocata"/, 'la decisione resta nel registro');
+  });
+
+  test('la tastiera approva senza toccare il mouse', () => {
+    impalcatura.scatenaGlobale('keydown', { key: 'a' });
+    assert.match(html(), /approvata/);
+    assert.match(html(), /Coda di revisione - 0 carte/);
+  });
+
+  test('una carta approvata non si rifa', () => {
+    clicca({ pagina: 'crea' });
+    assert.match(html(), /approvata/);
+    assert.doesNotMatch(html(), /data-azione="rifai-carta"/);
+  });
+
+  test('un tasto senza significato non combina niente', () => {
+    clicca({ pagina: 'moderazione' });
+    const prima = impalcatura.ridisegni();
+    impalcatura.scatenaGlobale('keydown', { key: 'q' });
+    assert.equal(impalcatura.ridisegni(), prima);
+  });
+});

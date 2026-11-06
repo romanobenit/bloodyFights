@@ -42,11 +42,14 @@ export interface Radice extends ElementoBase {
   /** Nessun canvas nel DOM finto: chi lo cerca non lo trova, e va bene cosi. */
   querySelector(selettore: string): null;
   addEventListener(tipo: string, gestore: (evento: { target: unknown }) => void): void;
-  scatena(tipo: string, bersaglio: unknown): void;
+  /** `extra` porta i campi dell'evento: clientX, key, pointerId... */
+  scatena(tipo: string, bersaglio: unknown, extra?: Record<string, unknown>): void;
 }
 
 export interface Impalcatura {
   radice: Radice;
+  /** Scatena un evento registrato su globalThis (tastiera, hashchange). */
+  scatenaGlobale(tipo: string, extra?: Record<string, unknown>): void;
   /** Quante volte la pagina e' stata ridisegnata. */
   ridisegni(): number;
   /** Esegue i timer in attesa: e' cosi' che si fa giocare il bot. */
@@ -69,8 +72,8 @@ export function installaDomFinto(semeFisso = 0.0): Impalcatura {
       lista.push(gestore);
       gestori.set(tipo, lista);
     },
-    scatena(tipo: string, bersaglio: unknown) {
-      for (const gestore of gestori.get(tipo) ?? []) gestore({ target: bersaglio });
+    scatena(tipo: string, bersaglio: unknown, extra: Record<string, unknown> = {}) {
+      for (const gestore of gestori.get(tipo) ?? []) gestore({ target: bersaglio, ...extra });
     },
   }) as Radice;
 
@@ -91,7 +94,14 @@ export function installaDomFinto(semeFisso = 0.0): Impalcatura {
     putImageData: () => undefined,
   };
 
+  const globaliRegistrati = new Map<string, ((evento: unknown) => void)[]>();
+
   const globale = globalThis as Record<string, unknown>;
+  globale.addEventListener = (tipo: string, gestore: (evento: unknown) => void) => {
+    const lista = globaliRegistrati.get(tipo) ?? [];
+    lista.push(gestore);
+    globaliRegistrati.set(tipo, lista);
+  };
   globale.Element = ElementoBase;
   // Dichiarato perche' main.ts registra i gestori del puntatore solo dove
   // esistono: senza, il disegno sulla tela non verrebbe mai collegato.
@@ -116,6 +126,9 @@ export function installaDomFinto(semeFisso = 0.0): Impalcatura {
 
   return {
     radice,
+    scatenaGlobale(tipo: string, extra: Record<string, unknown> = {}) {
+      for (const gestore of globaliRegistrati.get(tipo) ?? []) gestore({ ...extra });
+    },
     ridisegni: () => ridisegni,
     timerInAttesa: () => timer.length,
     scorriTimer(quanti = 200) {

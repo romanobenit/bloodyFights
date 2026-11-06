@@ -11,7 +11,7 @@ specifiche v0.1 (5 novembre 2026).
 | 0 | Motore di gioco puro + suite di test | **completata** |
 | 1 | Tabellone giocabile, bot elementare, primo playtest | **completata** |
 | 2 | Account, mazzi, tutorial | **parte client completata** |
-| 3 | Editor di carte, coda di moderazione | **editor completato** |
+| 3 | Editor di carte, coda di moderazione | **completata (coda locale)** |
 | 4 | Online: WebSocket, matchmaking, MMR | da fare |
 | 5 | Economia, bauli, feed della home | da fare |
 | 6 | Pagamenti, termini, privacy | da fare |
@@ -32,7 +32,7 @@ funzionano gia da Node 22.6.
 ## Comandi
 
 ```bash
-npm test          # 264 test su motore, pixel, disegno, pagine, interfaccia e stile
+npm test          # 302 test su motore, pixel, disegno, pagine, interfaccia e stile
 npm run dev       # gioca su http://localhost:5173
 npm run build     # compila in apps/web/dist
 npm run anteprima # pagina statica di anteprima, apribile con un doppio clic
@@ -74,6 +74,7 @@ apps/web/          tabellone giocabile, mazzo, profilo, tutorial
   src/vista.ts       tabellone: stato -> HTML, nessun accesso al DOM
   src/pagine.ts      mazzo, profilo, tutorial: stesse regole, stessa purezza
   src/editor.ts      editor di carte: strumenti, vincoli, barra di potenza
+  src/moderazione.ts coda di revisione, decisioni, revoca di un rifiuto
   src/profilo.ts     collezione, mazzi, validazione. Funzioni pure
   src/deposito.ts    dove finiscono i dati: memoria o localStorage
   src/main.ts        clic -> azioni, turno del bot, navigazione
@@ -154,12 +155,25 @@ sfonderebbero lo stack), linea di Bresenham con gli estremi normalizzati
 perche' il verso del trascinamento non cambi il risultato, cronologia che
 scarta il futuro quando si disegna dopo un annulla.
 
-Non c'e': **la coda di moderazione**. Il pannello admin con le scorciatoie da
-tastiera e il registro delle decisioni vive sul server. La carta inviata resta
-in stato `pending`; nel frattempo entra nella collezione locale con due copie,
-cosi' la si puo' provare in partita, contrassegnata come non approvata. Nel
-pool pubblico ci entra solo dopo la revisione umana: nessun filtro automatico
-riconosce in modo affidabile un disegno offensivo a 32x32.
+Il **pannello di moderazione** c'e': coda ordinata per data, anteprima del
+disegno, statistiche e potenza calcolata, approvazione e rifiuto con le quattro
+motivazioni predefinite del cap. 9, registro delle decisioni e revoca di un
+rifiuto sbagliato. La revisione si fa a tastiera (`A` approva, `1`-`4`
+rifiutano, `Z` revoca), perche' con centinaia di carte in coda il mouse non
+basta.
+
+Il ciclo e' chiuso: una carta rifiutata mostra al creatore la motivazione,
+esce dalla sua collezione e dai suoi mazzi, e gli restituisce il tentativo.
+Una revoca la rimette in coda e lascia nel registro la decisione annullata,
+segnata come tale: un registro che si puo' riscrivere non e' un registro.
+
+Quello che manca e' la **coda condivisa**. Oggi vive in questo browser, quindi
+si vedono solo le proprie carte e si e' insieme creatore e moderatore: serve a
+provare il flusso, non a validare niente. Con il server la coda diventa comune,
+il pannello viene riservato ai moderatori e la carta approvata entra nel pool
+pubblico. L'approvazione resta manuale: nessun filtro automatico riconosce in
+modo affidabile un disegno offensivo a 32x32, e l'occhio umano in coda e'
+l'unica difesa reale.
 
 ## La palette: una decisione da confermare
 

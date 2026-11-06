@@ -42,6 +42,8 @@ export interface CartaCreata {
   pixels: string;
   stato: 'pending' | 'approved' | 'rejected';
   inviataIl: string;
+  /** Presente solo se rifiutata: uno dei motivi predefiniti del cap. 9. */
+  motivoRifiuto?: string;
 }
 
 const ELEMENTI: Elemento[] = ['latte', 'veleno', 'acqua', 'fuoco', 'petrolio', 'sangue'];
@@ -324,6 +326,38 @@ export function paginaEditor(c: ContestoEditor): string {
 }
 
 function cartaGiaInviata(carta: CartaCreata): string {
+  const stato = {
+    pending: { etichetta: 'in moderazione', classe: 'costo' },
+    approved: { etichetta: 'approvata', classe: 'vita' },
+    rejected: { etichetta: 'rifiutata', classe: 'costo' },
+  }[carta.stato];
+
+  const spiegazione =
+    carta.stato === 'pending'
+      ? `<p class="nota">
+           La revisione e manuale e passa dal pannello di moderazione. Nel
+           frattempo la carta e nella tua collezione e la puoi mettere nel
+           mazzo per giocare in locale, contrassegnata come non approvata.
+         </p>
+         <p class="nota">
+           Nessun filtro automatico riconosce in modo affidabile un disegno
+           offensivo a 32x32: l occhio umano in coda e l unica difesa reale,
+           ed e il motivo per cui l approvazione e manuale.
+         </p>`
+      : carta.stato === 'approved'
+        ? `<p class="nota">
+             Approvata: la carta e entrata nel pool. Quando ci sara il server
+             sara estraibile dai bauli e comparira nel feed della home.
+           </p>`
+        : `<div class="esito-mazzo non-valido">
+             <strong>Rifiutata:</strong> ${fuggi(carta.motivoRifiuto ?? 'motivo non indicato')}
+           </div>
+           <p class="nota">
+             Il tentativo torna disponibile: puoi disegnarne un altra. La carta
+             rifiutata esce dalla tua collezione e dai mazzi in cui l avevi messa.
+           </p>
+           <button type="button" class="bottone" data-azione="rifai-carta">Rifai la carta</button>`;
+
   return `
     <div class="pagina">
       <section class="pannello">
@@ -341,24 +375,13 @@ function cartaGiaInviata(carta: CartaCreata): string {
           </figure>
           <div>
             <dl class="statistiche">
-              <dt>Stato</dt><dd class="costo">in moderazione</dd>
+              <dt>Stato</dt><dd class="${stato.classe}">${stato.etichetta}</dd>
               <dt>Potenza</dt><dd>${String(carta.potenza).replace('.', ',')} / ${CONFIG.carte.potenzaMax}</dd>
               <dt>Costo</dt><dd>${carta.costo}</dd>
               <dt>Rarita</dt><dd>${carta.rarita}</dd>
               <dt>Inviata il</dt><dd>${fuggi(carta.inviataIl)}</dd>
             </dl>
-            <p class="nota">
-              La revisione e manuale e passa dal pannello di moderazione, che
-              vive sul server: finche il server non c e, la carta resta in
-              attesa. Nel frattempo e nella tua collezione e la puoi mettere
-              nel mazzo per giocare in locale, contrassegnata come non
-              approvata.
-            </p>
-            <p class="nota">
-              Nessun filtro automatico riconosce in modo affidabile un disegno
-              offensivo a 32x32: l occhio umano in coda e l unica difesa reale,
-              ed e il motivo per cui l approvazione e manuale.
-            </p>
+            ${spiegazione}
           </div>
         </div>
       </section>

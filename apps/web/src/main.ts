@@ -23,6 +23,10 @@ import {
   applicaStrumento, bozzaIniziale, esaminaBozza, normalizzaBozza, paginaEditor,
   type Bozza, type CartaCreata, type ContestoEditor,
 } from './editor.ts';
+import {
+  approva, coda, comandoDaTasto, paginaModerazione, revoca, rifiuta,
+  type ContestoModerazione, type MotivoRifiuto,
+} from './moderazione.ts';
 import { depositoLocale, type Deposito } from './deposito.ts';
 import {
   PAGINE,
@@ -80,7 +84,11 @@ export const ID_CARTA_UTENTE = 'utente-1';
 
 function cartaUtente(): CartaCompleta | null {
   const creata = profilo?.cartaCreata;
-  if (!creata) return null;
+  // Una carta respinta dalla revisione esce dal catalogo: non deve comparire
+  // nella collezione ne' poter rientrare in un mazzo. Resta leggibile in
+  // `profilo.cartaCreata`, perche' l'editor deve mostrarne il motivo e il
+  // pannello deve poter revocare il rifiuto.
+  if (!creata || creata.stato === 'rejected') return null;
   return {
     id: ID_CARTA_UTENTE,
     nome: creata.nome,
@@ -242,6 +250,22 @@ function messaggioDiFase(): string {
 }
 
 function rendi(): void {
+  if (pagina === 'moderazione') {
+    const mia = profilo.cartaCreata ? [profilo.cartaCreata] : [];
+    const contesto: ContestoModerazione = {
+      coda: coda(mia),
+      decisioni: profilo.decisioni ?? [],
+      giudicate: mia.filter((c) => c.stato !== 'pending'),
+      creatore: profilo.nickname || 'Tu',
+      messaggio,
+    };
+    radice.innerHTML = barraNavigazione(pagina) +
+      (messaggio ? `<div class="messaggio">${messaggio}</div>` : '') +
+      paginaModerazione(contesto);
+    dipingiTele();
+    return;
+  }
+
   if (pagina === 'crea') {
     const contesto: ContestoEditor = { bozza, gia: profilo.cartaCreata ?? null, messaggio };
     radice.innerHTML = barraNavigazione(pagina) +
@@ -279,6 +303,31 @@ function rendi(): void {
     urlSprite,
   };
   radice.innerHTML = barraNavigazione(pagina) + disegna(schermata);
+}
+
+/**
+ * Ridisegna senza far perdere il filo a chi sta scrivendo.
+ *
+ * Senza questo, durante la digitazione si poteva scegliere fra due difetti:
+ * non ridisegnare, e allora il pulsante "Invia" restava grigio anche dopo
+ * aver scritto il nome; oppure ridisegnare, e allora il campo veniva
+ * ricostruito e il cursore saltava alla fine a ogni lettera. Si ridisegna, e
+ * poi si rimette il fuoco e il cursore dov'erano.
+ */
+function rendiMantenendoIlFuoco(): void {
+  const documento = globalThis.document as Document | undefined;
+  const attivo = documento?.activeElement as HTMLInputElement | null;
+  const campo = attivo?.dataset?.campo;
+  const inizio = attivo?.selectionStart ?? null;
+  const fine = attivo?.selectionEnd ?? null;
+
+  rendi();
+
+  if (!campo) return;
+  const tornato = radice.querySelector?.(`[data-campo="${campo}"]`) as HTMLInputElement | null;
+  if (!tornato) return;
+  tornato.focus?.();
+  if (inizio !== null && fine !== null) tornato.setSelectionRange?.(inizio, fine);
 }
 
 function vaiA(nuova: Pagina): void {
@@ -539,9 +588,14 @@ function dipingiCanvas(canvas: HTMLCanvasElement, tela: Tela): void {
  * stessa, ed e' per questo che sta qui e non in editor.ts.
  */
 function dipingiTele(): void {
-  const tela = profilo.cartaCreata
-    ? decodifica(profilo.cartaCreata.pixels)
-    : telaVisibile();
+  // In moderazione e nella scheda della carta inviata si mostra il disegno
+  // salvato; nell'editor, il tratto in corso.
+  const tela =
+    pagina !== 'crea' || profilo.cartaCreata
+      ? profilo.cartaCreata
+        ? decodifica(profilo.cartaCreata.pixels)
+        : telaVisibile()
+      : telaVisibile();
 
   for (const nome of ['tela', 'anteprima']) {
     const canvas = comeCanvas(radice.querySelector(`[data-${nome}]`));
@@ -674,6 +728,101 @@ function inviaCarta(): void {
   rendi();
 }
 
+/**
+ * Applica una decisione di revisione. Il registro non si riscrive: una
+ * decisione revocata resta, segnata come tale.
+ */
+function decidi(comando: { tipo: 'approva' } | { tipo: 'rifiuta'; motivo: MotivoRifiuto } | { tipo: 'revoca' }): void {
+  const carta = profilo.cartaCreata;
+  if (!carta) {
+    messaggio = 'Non c e niente da revisionare.';
+    rendi();
+    return;
+  }
+
+  const quando = new Date().toISOString().slice(0, 10);
+  const creatore = profilo.nickname || 'Tu';
+  const decisioni = profilo.decisioni ?? [];
+
+  if (comando.tipo === 'revoca') {
+    if (carta.stato === 'pending') {
+      messaggio = 'Questa carta e gia in coda.';
+      rendi();
+      return;
+    }
+    const esito = revoca(carta, decisioni);
+    profilo = {
+      ...profilo,
+      cartaCreata: esito.carta,
+      decisioni: esito.decisioni,
+      // Rimessa in coda, torna utilizzabile in locale come quando fu inviata.
+      collezione: { ...profilo.collezione, [ID_CARTA_UTENTE]: 2 },
+    };
+    messaggio = `"${esito.carta.nome}" e tornata in coda.`;
+    salvaProfilo();
+    rendi();
+    return;
+  }
+
+  if (carta.stato !== 'pending') {
+    messaggio = 'Questa carta e gia stata giudicata.';
+    rendi();
+    return;
+  }
+
+  const esito =
+    comando.tipo === 'approva'
+      ? approva(carta, creatore, quando)
+      : rifiuta(carta, comando.motivo, creatore, quando);
+
+  // Una carta rifiutata esce dalla collezione e dai mazzi: non si puo'
+  // continuare a giocare una carta che la revisione ha respinto.
+  const collezione = { ...profilo.collezione };
+  const mazzi = profilo.mazzi.map((m) => {
+    if (!(ID_CARTA_UTENTE in m.carte)) return m;
+    const carte = { ...m.carte };
+    delete carte[ID_CARTA_UTENTE];
+    return { ...m, carte };
+  });
+
+  if (esito.carta.stato === 'rejected') {
+    delete collezione[ID_CARTA_UTENTE];
+  }
+
+  profilo = {
+    ...profilo,
+    cartaCreata: esito.carta,
+    decisioni: [...decisioni, esito.decisione],
+    collezione,
+    mazzi: esito.carta.stato === 'rejected' ? mazzi : profilo.mazzi,
+  };
+  salvaProfilo();
+
+  messaggio =
+    esito.carta.stato === 'approved'
+      ? `"${esito.carta.nome}" approvata.`
+      : `"${esito.carta.nome}" rifiutata. Il creatore recupera il suo tentativo.`;
+  rendi();
+}
+
+/** Clic dentro il pannello di moderazione. */
+function clicSullaModerazione(bersaglio: Element): boolean {
+  if (bersaglio.closest('[data-approva]')) {
+    decidi({ tipo: 'approva' });
+    return true;
+  }
+  const rifiuto = bersaglio.closest<HTMLElement>('[data-rifiuta]');
+  if (rifiuto) {
+    decidi({ tipo: 'rifiuta', motivo: rifiuto.dataset.rifiuta as MotivoRifiuto });
+    return true;
+  }
+  if (bersaglio.closest('[data-revoca]')) {
+    decidi({ tipo: 'revoca' });
+    return true;
+  }
+  return false;
+}
+
 /** Clic dentro l'editor di carte. */
 function clicSullEditor(bersaglio: Element): boolean {
   const scelte: [string, (valore: string) => void][] = [
@@ -715,6 +864,17 @@ function clicSullEditor(bersaglio: Element): boolean {
     case 'invia-carta':
       inviaCarta();
       return true;
+    case 'rifai-carta': {
+      // Il tentativo torna disponibile solo dopo un rifiuto: una carta
+      // approvata non si rifa', o cambierebbe sotto chi gia' ce l'ha.
+      if (profilo.cartaCreata?.stato !== 'rejected') return true;
+      profilo = { ...profilo, cartaCreata: null };
+      bozza = bozzaIniziale();
+      salvaProfilo();
+      messaggio = 'Puoi disegnare una carta nuova.';
+      rendi();
+      return true;
+    }
     default:
       return false;
   }
@@ -800,13 +960,14 @@ radice.addEventListener('click', (evento) => {
   const bersaglio = evento.target;
   if (!(bersaglio instanceof Element)) return;
 
-  if (pagina === 'crea') {
+  if (pagina === 'crea' || pagina === 'moderazione') {
     const voce = bersaglio.closest<HTMLElement>('[data-pagina]');
     if (voce) {
       vaiA(voce.dataset.pagina as Pagina);
       return;
     }
-    clicSullEditor(bersaglio);
+    if (pagina === 'moderazione') clicSullaModerazione(bersaglio);
+    else clicSullEditor(bersaglio);
     return;
   }
 
@@ -922,8 +1083,11 @@ radice.addEventListener('input', (evento) => {
       profilo = { ...profilo, bio: valore };
       break;
     case 'nome-carta':
+      // La bozza vive finche' non si invia: niente da salvare, ma la pagina
+      // va ridisegnata perche' il nome sblocca l'invio e compare nell'anteprima.
       bozza = { ...bozza, nome: valore };
-      return; // niente da salvare: la bozza vive finche' non si invia
+      rendiMantenendoIlFuoco();
+      return;
     case 'nome-mazzo':
       profilo = sostituisciMazzo(profilo, { ...mazzoAperto(), nome: valore });
       break;
@@ -931,8 +1095,26 @@ radice.addEventListener('input', (evento) => {
       return;
   }
   salvaProfilo();
-  // Non si ridisegna: riscrivere il campo mentre si digita sposterebbe il
-  // cursore alla fine a ogni lettera.
+  rendiMantenendoIlFuoco();
+});
+
+/**
+ * Revisione a tastiera. Attiva solo nel pannello, e mai mentre si scrive in
+ * un campo di testo: altrimenti digitare "a" in un nome approverebbe una carta.
+ */
+globalThis.addEventListener?.('keydown', (evento: Event) => {
+  if (pagina !== 'moderazione') return;
+  const tastiera = evento as KeyboardEvent;
+  if (tastiera.ctrlKey || tastiera.metaKey || tastiera.altKey) return;
+
+  const attivo = (globalThis as { document?: { activeElement?: { tagName?: string } } }).document
+    ?.activeElement?.tagName;
+  if (attivo === 'INPUT' || attivo === 'TEXTAREA') return;
+
+  const comando = comandoDaTasto(tastiera.key);
+  if (!comando) return;
+  tastiera.preventDefault?.();
+  decidi(comando);
 });
 
 /** Indietro e avanti del browser cambiano pagina. */

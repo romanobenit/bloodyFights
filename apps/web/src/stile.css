@@ -1587,3 +1587,114 @@ a.bottone {
   font-family: var(--pixel);
   font-size: 11px;
 }
+
+/* =========================================================================
+   PANNELLO DI MODERAZIONE
+   ========================================================================= */
+
+.scheda-revisione {
+  border-left: 5px solid var(--elemento, var(--accento));
+  background: #0d0d0d;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.posizione {
+  font-family: var(--pixel);
+  font-size: 8px;
+  color: var(--testo-secondario);
+  margin-bottom: 10px;
+}
+
+.revisione-corpo {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-bottom: 14px;
+}
+
+.decisione {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 2px solid var(--bordo);
+}
+
+/* Il tasto della scorciatoia e' parte del pulsante: si impara usandolo. */
+.tasto,
+kbd {
+  display: inline-block;
+  min-width: 16px;
+  padding: 1px 4px;
+  margin-right: 4px;
+  font-family: var(--pixel);
+  font-size: 8px;
+  text-align: center;
+  color: var(--testo);
+  background: var(--fondo);
+  border: 2px solid var(--accento-scuro);
+}
+
+.bottone .tasto {
+  color: var(--fondo);
+  background: var(--accento-chiaro);
+  border-color: var(--fondo);
+}
+
+.registro-decisioni {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.registro-decisioni li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  background: #0d0d0d;
+  border-left: 3px solid var(--bordo);
+}
+
+.registro-decisioni li.approved {
+  border-left-color: var(--veleno);
+}
+
+.registro-decisioni li.rejected {
+  border-left-color: var(--accento);
+}
+
+.registro-decisioni li.revocata {
+  border-left-color: var(--testo-secondario);
+  color: var(--testo-secondario);
+  text-decoration: line-through;
+}
+
+.registro-decisioni li.revocata em {
+  font-style: normal;
+  text-decoration: none;
+  color: var(--accento-chiaro);
+}
+
+.riga-revoca {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--trama);
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .revisione-corpo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

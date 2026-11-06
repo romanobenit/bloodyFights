@@ -1,4 +1,6 @@
 import { CONFIG, validaMazzo, type CartaCompleta } from '@bloodyfights/motore';
+import type { CartaCreata } from './editor.ts';
+import type { Decisione } from './moderazione.ts';
 
 /**
  * PROFILO, COLLEZIONE E MAZZI.
@@ -26,7 +28,9 @@ export interface Profilo {
   vittorie: number;
   sconfitte: number;
   /** Per la fase 3: ogni account puo' creare una sola carta. */
-  cartaCreata: string | null;
+  cartaCreata: CartaCreata | null;
+  /** Registro delle revisioni, per poter tornare indietro su un rifiuto. */
+  decisioni: Decisione[];
 }
 
 /** Fino a 3 mazzi, uno attivo (proposta del cap. 12). */
@@ -60,6 +64,7 @@ export function profiloIniziale(carte: readonly CartaCompleta[], nickname = 'Osp
     vittorie: 0,
     sconfitte: 0,
     cartaCreata: null,
+    decisioni: [],
   };
 }
 
