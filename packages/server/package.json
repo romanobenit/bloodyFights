@@ -1,0 +1,14 @@
+{
+  "name": "@bloodyfights/server",
+  "version": "0.1.0",
+  "description": "Server autoritativo: identita, coda, partite. Zero dipendenze",
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@bloodyfights/motore": "*"
+  },
+  "scripts": {
+    "avvia": "node src/avvio.ts",
+    "test": "node --test --experimental-strip-types test/*.test.ts"
+  }
+}

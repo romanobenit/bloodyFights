@@ -10,9 +10,9 @@ specifiche v0.1 (5 novembre 2026).
 |------|-----------|-------|
 | 0 | Motore di gioco puro + suite di test | **completata** |
 | 1 | Tabellone giocabile, bot elementare, primo playtest | **completata** |
-| 2 | Account, mazzi, tutorial | **parte client completata** |
+| 2 | Account, mazzi, tutorial | **completata lato server; manca la UI di accesso** |
 | 3 | Editor di carte, coda di moderazione | **completata (coda locale)** |
-| 4 | Online: WebSocket, matchmaking, MMR | da fare |
+| 4 | Online: WebSocket, matchmaking, MMR | **in corso: server e identita** |
 | 5 | Economia, bauli, feed della home | da fare |
 | 6 | Pagamenti, termini, privacy | da fare |
 
@@ -32,7 +32,8 @@ funzionano gia da Node 22.6.
 ## Comandi
 
 ```bash
-npm test          # 302 test su motore, pixel, disegno, pagine, interfaccia e stile
+npm test          # 343 test su motore, pixel, server, pagine, interfaccia e stile
+npm run server    # avvia il server su http://localhost:4000
 npm run dev       # gioca su http://localhost:5173
 npm run build     # compila in apps/web/dist
 npm run anteprima # pagina statica di anteprima, apribile con un doppio clic
@@ -70,6 +71,7 @@ il mazzo e disegna la sua carta; i dati restano nel suo browser.
 packages/motore/   regole del gioco. Non conosce rete, database, DOM
 packages/pixel/    palette, formato 4 bit/pixel, segnaposto, motore di disegno
 packages/bot/      avversario avido, condiviso fra interfaccia e simulatore
+packages/server/   server autoritativo: archivio, identita, rotte HTTP
 apps/web/          tabellone giocabile, mazzo, profilo, tutorial
   src/vista.ts       tabellone: stato -> HTML, nessun accesso al DOM
   src/pagine.ts      mazzo, profilo, tutorial: stesse regole, stessa purezza
@@ -174,6 +176,47 @@ il pannello viene riservato ai moderatori e la carta approvata entra nel pool
 pubblico. L'approvazione resta manuale: nessun filtro automatico riconosce in
 modo affidabile un disegno offensivo a 32x32, e l'occhio umano in coda e'
 l'unica difesa reale.
+
+## Fase 4: il server
+
+Il documento propone Fastify e PostgreSQL. Su questa macchina non sono
+installabili, quindi il server usa il modulo `http` integrato di Node e un
+archivio su file JSON - ma dietro le stesse interfacce che un domani useranno
+Fastify e il database: `Archivio` per la persistenza, rotte scritte come
+funzioni da Richiesta a Risposta che non sanno niente di Node. Cambiare strato
+vorra' dire riscrivere `http.ts`, non le regole.
+
+**Il principio non negoziabile del cap. 10 resta intatto:** il server e'
+autoritativo. Il motore di gioco e' lo stesso pacchetto che gira nel browser,
+quindi le due logiche non possono divergere: sono lo stesso file.
+
+### Identita'
+
+Registrazione e accesso veri, con le precauzioni che servono:
+
+- password con **scrypt** e un sale diverso per ogni utente, confronto a tempo
+  costante (un `===` esce al primo byte diverso, e il tempo di risposta
+  racconta quanti byte erano giusti);
+- sessioni con **token opachi e revocabili**, di cui l'archivio conserva solo
+  l'impronta: chi legge il file non entra in nessun account;
+- la stessa risposta per password sbagliata e indirizzo inesistente, o
+  l'errore diventerebbe un modo per scoprire chi ha un account;
+- freno dopo dieci tentativi falliti;
+- elenco chiuso di origini ammesse, mai `*`.
+
+Avvio: `npm run server`. Si configura con `PORTA`, `ARCHIVIO` e `ORIGINI`.
+
+### Dove va ospitato
+
+Il sito su Vercel e' statico e li' un server non vive. Il backend vuole un
+processo persistente: Railway o Fly.io, come dice il cap. 10.1. Vercel resta
+ottimo per il frontend.
+
+### Cosa manca alla fase 4
+
+La UI di accesso nel client, il matchmaking con la coda MMR, le partite fra
+due browser e il flusso in tempo reale. L'archivio prevede gia' le raccolte
+del cap. 10.4.
 
 ## La palette: una decisione da confermare
 

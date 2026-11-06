@@ -8,11 +8,12 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "npm test --workspace @bloodyfights/motore && npm test --workspace @bloodyfights/pixel && npm test --workspace @bloodyfights/web",
+    "test": "npm test --workspace @bloodyfights/motore && npm test --workspace @bloodyfights/pixel && npm test --workspace @bloodyfights/server && npm test --workspace @bloodyfights/web",
     "dev": "npm run dev --workspace @bloodyfights/web",
     "build": "npm run build --workspace @bloodyfights/web",
     "anteprima": "node apps/web/strumenti/anteprima.mjs",
-    "simula": "node packages/motore/scripts/simula.ts"
+    "simula": "node packages/motore/scripts/simula.ts",
+    "server": "npm run avvia --workspace @bloodyfights/server"
   },
   "engines": {
     "node": "22.x"
