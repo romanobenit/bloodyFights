@@ -74,6 +74,59 @@ export interface AvvisoRemoto {
   partita: PartitaRemota | null;
 }
 
+/** Una carta della community come la manda il server. */
+export interface CartaRemota {
+  id: string;
+  nome: string;
+  descrizione: string;
+  tipo: 'mischia' | 'distanza' | 'support' | 'oggetto';
+  elemento: string;
+  vita: number;
+  attacco: number;
+  potenza: number;
+  costo: number;
+  rarita: string;
+  pixels: string;
+  creatore: string;
+  stato: 'pending' | 'approved' | 'rejected';
+  motivoRifiuto?: string;
+  inviataIl: string;
+}
+
+export interface ProfiloRemoto {
+  collezione: Record<string, number>;
+  mazzi: { id: string; nome: string; carte: Record<string, number> }[];
+  mazzoAttivoId: string;
+  oro: number;
+}
+
+export interface BauleRemoto {
+  id: string;
+  nome: string;
+  prezzoOro: number | null;
+  prezzoEuro: number | null;
+  quanteCarte: number;
+  probabilita: Record<string, number>;
+  garantita?: string;
+}
+
+export interface CartaEstratta {
+  cartaId: string;
+  nome: string;
+  rarita: string;
+  duplicata: boolean;
+  oro: number;
+}
+
+export interface AperturaRemota {
+  id: string;
+  bauleId: string;
+  prezzo: number;
+  carte: CartaEstratta[];
+  oroRimasto: number;
+  apertaIl: string;
+}
+
 export interface Cliente {
   base: string;
   salute(): Promise<boolean>;
@@ -92,6 +145,26 @@ export interface Cliente {
    * Restituisce la funzione per chiuderlo.
    */
   apriFlusso(token: string, quando: (avviso: AvvisoRemoto) => void): () => void;
+
+  /** Il catalogo delle carte approvate: pubblico, non serve il token. */
+  catalogo(): Promise<CartaRemota[]>;
+  mieCarte(token: string): Promise<CartaRemota[]>;
+  inviaCarta(token: string, carta: unknown): Promise<CartaRemota>;
+
+  codaModerazione(token: string): Promise<CartaRemota[]>;
+  decidiCarta(
+    token: string, cartaId: string, esito: 'approved' | 'rejected' | 'revoca', motivo?: string,
+  ): Promise<CartaRemota>;
+
+  leggiProfilo(token: string): Promise<ProfiloRemoto>;
+  salvaMazzi(
+    token: string,
+    mazzi: ProfiloRemoto['mazzi'],
+    mazzoAttivoId: string,
+  ): Promise<ProfiloRemoto>;
+
+  bauli(): Promise<BauleRemoto[]>;
+  apriBaule(token: string, bauleId: string): Promise<AperturaRemota>;
 }
 
 /** Oltre questo tempo si considera il server assente invece di restare appesi. */
@@ -245,6 +318,41 @@ export function creaCliente(base: string, recupera: Recupero = globalThis.fetch)
         annulla.abort();
       };
     },
+
+    catalogo: () => chiama<{ carte: CartaRemota[] }>('/carte').then((r) => r.carte),
+
+    mieCarte: (token) =>
+      chiama<{ carte: CartaRemota[] }>('/carte/mie', { token }).then((r) => r.carte),
+
+    inviaCarta: (token, carta) =>
+      chiama<{ carta: CartaRemota }>('/carte', { metodo: 'POST', token, corpo: { carta } })
+        .then((r) => r.carta),
+
+    codaModerazione: (token) =>
+      chiama<{ carte: CartaRemota[] }>('/moderazione/coda', { token }).then((r) => r.carte),
+
+    decidiCarta: (token, cartaId, esito, motivo) =>
+      chiama<{ carta: CartaRemota }>(`/moderazione/carte/${encodeURIComponent(cartaId)}`, {
+        metodo: 'POST', token, corpo: { esito, motivo },
+      }).then((r) => r.carta),
+
+    leggiProfilo: (token) =>
+      chiama<{ profilo: ProfiloRemoto }>('/profilo', { token }).then((r) => r.profilo),
+
+    salvaMazzi: (token, mazzi, mazzoAttivoId) =>
+      chiama<{ profilo: ProfiloRemoto }>('/profilo/mazzi', {
+        metodo: 'PUT', token, corpo: { mazzi, mazzoAttivoId },
+      }).then((r) => r.profilo),
+
+    bauli: () => chiama<{ bauli: BauleRemoto[] }>('/bauli').then((r) => r.bauli),
+
+    apriBaule: (token, bauleId) =>
+      chiama<{ apertura: AperturaRemota }>(
+        `/bauli/${encodeURIComponent(bauleId)}/apertura`,
+        // L'apertura puo' richiedere una scrittura su file: piu' tempo del
+        // solito prima di darla per persa.
+        { metodo: 'POST', token, scadenza: 10_000 },
+      ).then((r) => r.apertura),
   };
 }
 

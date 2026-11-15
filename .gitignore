@@ -6,3 +6,6 @@ dist/
 .DS_Store
 *.log
 dati/
+
+# pagina di prova dello shop, generata a mano
+prova-shop.html

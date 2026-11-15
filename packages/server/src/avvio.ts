@@ -13,6 +13,7 @@ import { creaServer } from './http.ts';
 import { rotte } from './rotte.ts';
 import { rotteCarte } from './rotte-carte.ts';
 import { rotteOnline } from './rotte-online.ts';
+import { rotteProfilo } from './rotte-profilo.ts';
 import { rotteShop } from './rotte-shop.ts';
 
 const PORTA = Number(process.env.PORTA ?? 4000);
@@ -42,6 +43,7 @@ const server = creaServer({
   rotte: [
     ...rotte(archivio),
     ...rotteCarte({ archivio, amministratori: AMMINISTRATORI }),
+    ...rotteProfilo(archivio),
     ...rotteShop({ archivio }),
     ...rotteOnline({ archivio, arena }),
   ],

@@ -9,3 +9,4 @@ export * from './carte.ts';
 export * from './rotte-carte.ts';
 export * from './bauli.ts';
 export * from './rotte-shop.ts';
+export * from './rotte-profilo.ts';

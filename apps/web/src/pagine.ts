@@ -12,12 +12,13 @@ import { fuggi } from './vista.ts';
  * stringa HTML, nessun accesso al DOM, quindi verificabili in Node.
  */
 
-export type Pagina = 'gioca' | 'online' | 'mazzo' | 'crea' | 'moderazione' | 'profilo' | 'accesso' | 'tutorial';
+export type Pagina = 'gioca' | 'online' | 'mazzo' | 'shop' | 'crea' | 'moderazione' | 'profilo' | 'accesso' | 'tutorial';
 
 export const PAGINE: { id: Pagina; nome: string }[] = [
   { id: 'gioca', nome: 'Gioca' },
   { id: 'online', nome: 'Online' },
   { id: 'mazzo', nome: 'Mazzo' },
+  { id: 'shop', nome: 'Shop' },
   { id: 'crea', nome: 'Crea carta' },
   { id: 'moderazione', nome: 'Moderazione' },
   { id: 'profilo', nome: 'Profilo' },

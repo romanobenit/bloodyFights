@@ -2043,3 +2043,150 @@ kbd {
     flex: 1;
   }
 }
+
+/* --- shop e bauli ------------------------------------------------------- */
+
+.saldo .punteggio {
+  font-family: var(--pixel);
+  font-size: 26px;
+  color: var(--accento-chiaro);
+  margin: 0 0 4px;
+}
+
+.saldo .punteggio span {
+  font-size: 10px;
+  color: var(--testo-secondario);
+  margin-left: 6px;
+}
+
+.vetrina {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.baule {
+  flex: 1 1 260px;
+}
+
+.baule.spento {
+  opacity: 0.6;
+}
+
+.baule .prezzo {
+  font-family: var(--pixel);
+  font-size: 18px;
+  color: var(--accento-chiaro);
+  margin: 0 0 4px;
+}
+
+.baule .prezzo span {
+  font-size: 9px;
+  color: var(--testo-secondario);
+}
+
+.probabilita {
+  list-style: none;
+  margin: 10px 0;
+  padding: 0;
+  font-size: 12px;
+}
+
+.probabilita li {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--bordo);
+}
+
+.baule .motivo {
+  color: var(--accento-chiaro);
+}
+
+.nota-pool {
+  margin-top: 12px;
+}
+
+/* --- apertura ----------------------------------------------------------- */
+
+.estratte {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.estratta {
+  flex: 1 1 120px;
+  min-height: 130px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  text-align: center;
+  background: var(--trama);
+  border: 2px solid var(--accento-scuro);
+  box-shadow: 4px 4px 0 var(--accento-scuro);
+  /* Sei fotogrammi, non una dissolvenza: la carta si gira a scatti. */
+  animation: gira-carta 240ms steps(6, end);
+}
+
+@keyframes gira-carta {
+  0% { transform: scaleX(0.1); }
+  100% { transform: scaleX(1); }
+}
+
+.estratta.coperta {
+  color: var(--accento-scuro);
+  font-family: var(--pixel);
+  font-size: 28px;
+  animation: none;
+}
+
+.estratta .rarita {
+  font-family: var(--pixel);
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: var(--testo-secondario);
+  text-transform: uppercase;
+}
+
+.estratta.raro { border-color: var(--acqua); }
+.estratta.epico { border-color: var(--veleno); }
+.estratta.leggendario { border-color: var(--fuoco); }
+
+.estratta.leggendario .rarita { color: var(--fuoco); }
+.estratta.epico .rarita { color: var(--veleno); }
+.estratta.raro .rarita { color: var(--acqua); }
+
+.estratta .nuova {
+  font-family: var(--pixel);
+  font-size: 8px;
+  color: var(--accento-chiaro);
+}
+
+.estratta.duplicata {
+  opacity: 0.75;
+}
+
+.estratta .rimborso {
+  font-family: var(--pixel);
+  font-size: 9px;
+  color: var(--testo-secondario);
+}
+
+@media (max-width: 480px) {
+  .vetrina {
+    flex-direction: column;
+  }
+
+  .estratta {
+    flex: 1 1 90px;
+    min-height: 100px;
+  }
+}

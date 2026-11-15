@@ -29,12 +29,14 @@ import {
 } from './moderazione.ts';
 import {
   ErroreServer, creaCliente, indirizzoServerPredefinito,
-  type AvvisoRemoto, type PartitaRemota, type StatoCoda, type UtenteRemoto,
+  type AperturaRemota, type AvvisoRemoto, type BauleRemoto, type CartaRemota,
+  type PartitaRemota, type StatoCoda, type UtenteRemoto,
 } from './cliente.ts';
 import {
   paginaOnline, riassuntoEsito, secondiAlTurno,
   type ContestoOnline, type StatoOnline,
 } from './online.ts';
+import { paginaShop, type ContestoShop, type StatoShop } from './shop.ts';
 import {
   etichettaAccesso, moduloVuoto, paginaAccesso,
   type ContestoAccesso, type ModoAccesso, type ModuloAccesso, type StatoServer,
@@ -118,13 +120,39 @@ function cartaUtente(): CartaCompleta | null {
 }
 
 /**
- * Il catalogo della partita: le carte base piu' quella creata, se c'e'.
- * Il costo si ricalcola dalla formula anche per la carta dell'utente, cosi'
- * una ritaratura dei pesi la ribilancia come tutte le altre.
+ * Le carte approvate della community, come arrivano dal server. Vuoto
+ * quando il server non c'e': l'app resta giocabile con le sole venti base.
+ */
+let carteCommunity: CartaRemota[] = [];
+
+function comeCartaGiocabile(remota: CartaRemota): CartaCompleta {
+  const base = {
+    id: remota.id,
+    nome: remota.nome,
+    tipo: remota.tipo,
+    elemento: remota.elemento as Elemento,
+    vita: remota.vita,
+    attacco: remota.attacco,
+    descrizione: remota.descrizione,
+    creatoreId: remota.creatore,
+  };
+  // Costo e rarita' si ricalcolano anche qui, invece di fidarsi dei numeri
+  // arrivati dal filo: il server li manda, ma la formula e' la stessa e un
+  // disaccordo si vedrebbe subito.
+  return { ...base, ...statisticheDerivate(base) };
+}
+
+/**
+ * Il catalogo della partita: le carte base, quelle approvate della
+ * community, piu' la propria carta locale se c'e'.
+ *
+ * Il costo si ricalcola dalla formula per tutte, cosi' una ritaratura dei
+ * pesi le ribilancia insieme.
  */
 function catalogo(): CartaCompleta[] {
   const mia = cartaUtente();
-  return mia ? [...CARTE_BASE, mia] : [...CARTE_BASE];
+  const tutte = [...CARTE_BASE, ...carteCommunity.map(comeCartaGiocabile)];
+  return mia ? [...tutte, mia] : tutte;
 }
 
 /**
@@ -138,7 +166,9 @@ function urlSprite(cartaId: string): string {
   if (inCache) return inCache;
 
   const base64 =
-    cartaId === ID_CARTA_UTENTE ? profilo.cartaCreata?.pixels : base64PerCarta.get(cartaId);
+    cartaId === ID_CARTA_UTENTE
+      ? profilo.cartaCreata?.pixels
+      : base64PerCarta.get(cartaId) ?? carteCommunity.find((c) => c.id === cartaId)?.pixels;
   if (!base64) return '';
 
   const tela = decodifica(base64);
@@ -202,6 +232,25 @@ let chiudiFlusso: (() => void) | null = null;
 /** Ridisegna ogni secondo: serve al contasecondi del turno e al tempo in coda. */
 let battitoOnline: ReturnType<typeof setInterval> | null = null;
 
+// ------------------------------------------------------------------- shop
+
+let bauli: BauleRemoto[] = [];
+/** L'apertura in corso: le carte sono gia' decise, qui si scoprono. */
+let apertura: AperturaRemota | null = null;
+/** Quante carte dell'apertura sono gia' state scoperte. */
+let scoperte = 0;
+let aperturaInCorso = false;
+let erroreShop = '';
+let svelamento: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Le scritture dei mazzi verso il server si accodano invece di partire a
+ * ogni tasto: scrivendo il nome di un mazzo si manderebbe una richiesta per
+ * lettera.
+ */
+let scritturaMazzi: ReturnType<typeof setTimeout> | null = null;
+const ATTESA_SCRITTURA_MS = 800;
+
 function token(): string | null {
   return deposito.leggi<string>(CHIAVE_TOKEN);
 }
@@ -233,6 +282,7 @@ async function risvegliaSessione(): Promise<void> {
   }
 
   if (utenteRemoto) {
+    void tiraGiuIlProfilo();
     // Il flusso si apre appena si sa chi siamo: cosi' una partita trovata
     // arriva anche a chi sta guardando un'altra pagina, e una partita
     // interrotta dal ricaricamento della pagina riprende da dove era.
@@ -255,8 +305,15 @@ function caricaProfilo(): Profilo {
   return profiloIniziale(CARTE_BASE);
 }
 
-function salvaProfilo(): void {
+function salvaProfiloSoloInLocale(): void {
   deposito.scrivi(CHIAVE_PROFILO, profilo);
+}
+
+function salvaProfilo(): void {
+  salvaProfiloSoloInLocale();
+  // Quando si e' collegati i mazzi vivono sul server: il browser ne tiene
+  // una copia per poter giocare contro il bot anche da scollegati.
+  spingiIMazzi();
 }
 
 function paginaDallIndirizzo(): Pagina {
@@ -326,6 +383,59 @@ function messaggioDiFase(): string {
     default:
       return '';
   }
+}
+
+// -------------------------------------------- sincronizzazione col server
+
+/**
+ * Tira giu' dal server collezione, mazzi e oro, e li mette nel profilo
+ * locale.
+ *
+ * La collezione la decide il server e basta: si sovrascrive quella locale
+ * senza fondere niente. I mazzi invece si prendono solo se il server ne ha:
+ * chi si e' appena registrato da un browser dove aveva gia' costruito dei
+ * mazzi offline non deve perderli al primo accesso.
+ */
+async function tiraGiuIlProfilo(): Promise<void> {
+  const tok = token();
+  if (!tok || !cliente.base) return;
+
+  try {
+    const [remoto, carte] = await Promise.all([
+      cliente.leggiProfilo(tok),
+      cliente.catalogo().catch(() => [] as CartaRemota[]),
+    ]);
+    carteCommunity = carte;
+    cacheSprite.clear();
+
+    profilo = {
+      ...profilo,
+      collezione: remoto.collezione,
+      mazzi: remoto.mazzi.length > 0 ? remoto.mazzi : profilo.mazzi,
+      mazzoAttivoId: remoto.mazzi.length > 0 ? remoto.mazzoAttivoId : profilo.mazzoAttivoId,
+    };
+    mazzoApertoId = profilo.mazzoAttivoId;
+    if (utenteRemoto) utenteRemoto = { ...utenteRemoto, oro: remoto.oro };
+    salvaProfiloSoloInLocale();
+    rendi();
+  } catch {
+    // Server assente o token scaduto: si continua con quello che c'e' in
+    // locale. L'app deve restare giocabile anche da sola.
+  }
+}
+
+/** Manda i mazzi al server, non subito e non a ogni tasto. */
+function spingiIMazzi(): void {
+  const tok = token();
+  if (!tok || !cliente.base || !utenteRemoto) return;
+
+  if (scritturaMazzi) clearTimeout(scritturaMazzi);
+  scritturaMazzi = setTimeout(() => {
+    scritturaMazzi = null;
+    void cliente
+      .salvaMazzi(tok, profilo.mazzi, profilo.mazzoAttivoId)
+      .catch(() => undefined);
+  }, ATTESA_SCRITTURA_MS);
 }
 
 // ------------------------------------------------- la macchina dell online
@@ -477,6 +587,105 @@ function fermaBattitoOnline(): void {
   battitoOnline = null;
 }
 
+// ------------------------------------------------- la macchina dello shop
+
+function statoShopCorrente(): StatoShop {
+  if (!cliente.base || statoServer === 'assente') return { tipo: 'senzaServer' };
+  if (!utenteRemoto || !token()) return { tipo: 'senzaConto' };
+  if (apertura) return { tipo: 'apertura', apertura, scoperte };
+  return { tipo: 'listino' };
+}
+
+async function caricaShop(): Promise<void> {
+  if (bauli.length > 0 || !cliente.base) return;
+  try {
+    bauli = await cliente.bauli();
+    rendi();
+  } catch {
+    // Listino non disponibile: la pagina lo dice da sola.
+  }
+}
+
+/**
+ * Scopre le carte una alla volta.
+ *
+ * Il ritmo e' solo messa in scena: l'esito e' gia' nell'archivio del server
+ * da prima che questa funzione parta.
+ */
+const PASSO_SVELAMENTO_MS = 420;
+
+function svelaProssima(): void {
+  if (svelamento) clearTimeout(svelamento);
+  if (!apertura || scoperte >= apertura.carte.length) return;
+
+  svelamento = setTimeout(() => {
+    svelamento = null;
+    scoperte += 1;
+    rendi();
+    svelaProssima();
+  }, PASSO_SVELAMENTO_MS);
+}
+
+function apriUnBaule(bauleId: string): void {
+  const tok = token();
+  if (!tok || aperturaInCorso) return;
+
+  aperturaInCorso = true;
+  erroreShop = '';
+  rendi();
+
+  cliente
+    .apriBaule(tok, bauleId)
+    .then((esito) => {
+      apertura = esito;
+      scoperte = 0;
+      if (utenteRemoto) utenteRemoto = { ...utenteRemoto, oro: esito.oroRimasto };
+      svelaProssima();
+      // La collezione e' cambiata: si rilegge invece di indovinare cosa
+      // c'e' dentro adesso.
+      void tiraGiuIlProfilo();
+    })
+    .catch((errore) => {
+      erroreShop = errore instanceof Error ? errore.message : 'Il baule non si e aperto.';
+    })
+    .finally(() => {
+      aperturaInCorso = false;
+      rendi();
+    });
+}
+
+function chiudiApertura(): void {
+  if (svelamento) clearTimeout(svelamento);
+  svelamento = null;
+  apertura = null;
+  scoperte = 0;
+  rendi();
+}
+
+/** Clic dentro lo shop. Vero se l'ha gestito lui. */
+function clicSulloShop(bersaglio: Element): boolean {
+  const baule = bersaglio.closest<HTMLElement>('[data-apri-baule]');
+  if (baule) {
+    apriUnBaule(baule.dataset.apriBaule ?? '');
+    return true;
+  }
+
+  const comando = bersaglio.closest<HTMLElement>('[data-azione]');
+  const azione = comando?.dataset.azione;
+  if (azione === 'scopri-tutto') {
+    if (svelamento) clearTimeout(svelamento);
+    svelamento = null;
+    scoperte = apertura?.carte.length ?? 0;
+    rendi();
+    return true;
+  }
+  if (azione === 'chiudi-apertura') {
+    chiudiApertura();
+    return true;
+  }
+  return false;
+}
+
 /** La voce "Accedi" porta il nickname quando si e' connessi. */
 function barra(): string {
   return barraNavigazione(pagina, {
@@ -530,6 +739,19 @@ function rendi(): void {
       secondiRimasti: secondiAlTurno(partitaOnline, Date.now()),
     };
     radice.innerHTML = barra() + disegna(schermata);
+    return;
+  }
+
+  if (pagina === 'shop') {
+    const contesto: ContestoShop = {
+      statoShop: statoShopCorrente(),
+      bauli,
+      oro: utenteRemoto?.oro ?? 0,
+      carteNelPool: carteCommunity.length,
+      inCorso: aperturaInCorso,
+      errore: erroreShop,
+    };
+    radice.innerHTML = barra() + paginaShop(contesto);
     return;
   }
 
@@ -617,6 +839,11 @@ function vaiA(nuova: Pagina): void {
   pagina = nuova;
   messaggio = nuova === 'gioca' ? messaggioDiFase() : '';
   if (globalThis.location) globalThis.location.hash = nuova;
+
+  if (nuova === 'shop') {
+    erroreShop = '';
+    void caricaShop();
+  }
 
   if (nuova === 'online') {
     apriFlussoOnline();
@@ -1161,6 +1388,7 @@ async function inviaAccesso(): Promise<void> {
     // Appena si entra si apre il flusso: una partita in corso dal
     // dispositivo di prima riprende senza dover andare a cercarla.
     apriFlussoOnline();
+    void tiraGiuIlProfilo();
   } catch (errore) {
     erroreAccesso =
       errore instanceof ErroreServer ? errore.message : 'Qualcosa e andato storto';
@@ -1431,6 +1659,16 @@ radice.addEventListener('click', (evento) => {
     if (casella) {
       clicSuCasella(Number(casella.dataset.giocatore), Number(casella.dataset.casella));
     }
+    return;
+  }
+
+  if (pagina === 'shop') {
+    const voce = bersaglio.closest<HTMLElement>('[data-pagina]');
+    if (voce) {
+      vaiA(voce.dataset.pagina as Pagina);
+      return;
+    }
+    clicSulloShop(bersaglio);
     return;
   }
 

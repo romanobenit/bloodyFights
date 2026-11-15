@@ -82,6 +82,8 @@ describe('regole grafiche del cap. 2', () => {
 
   test('le animazioni sono a scatti, mai interpolate', () => {
     for (const valore of dichiarazioni('animation')) {
+      // `animation: none` spegne un'animazione ereditata: non ne e' una.
+      if (valore.trim() === 'none') continue;
       assert.match(valore, /steps\(/, `animazione senza steps(): ${valore}`);
       assert.doesNotMatch(valore, /\bease|\blinear\b|cubic-bezier/, `animazione interpolata: ${valore}`);
     }
