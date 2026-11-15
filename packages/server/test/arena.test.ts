@@ -8,9 +8,13 @@ function utente(id: string, mmr = 1000): Utente {
   return {
     id, email: `${id}@x.it`, impronta: '', sale: '', nickname: id, bio: '',
     oro: 0, mmr, vittorie: 0, sconfitte: 0, cartaCreataId: null,
+    collezione: {}, mazzi: [], mazzoAttivoId: '', ultimaVittoriaIl: null,
     creatoIl: new Date(0).toISOString(), tentativiFalliti: 0, ultimoTentativo: 0,
   };
 }
+
+/** Il giorno che l'arena di prova crede sia oggi. Si sposta a mano. */
+let giorno = '2026-11-15';
 
 function arena(mmrA = 1000, mmrB = 1000) {
   const dati = datiVuoti();
@@ -19,7 +23,10 @@ function arena(mmrA = 1000, mmrB = 1000) {
   let n = 0;
   return {
     archivio,
-    a: creaArena({ archivio, carte: CARTE_BASE, seme: () => 777, nuovoId: () => `p${++n}` }),
+    a: creaArena({
+      archivio, carte: CARTE_BASE, seme: () => 777,
+      nuovoId: () => `p${++n}`, oggi: () => giorno,
+    }),
   };
 }
 
@@ -306,5 +313,96 @@ describe('pulizia', () => {
     arn.pulisci(60 * 60_000);
     assert.equal(arn.partita(id), null);
     assert.equal(arn.vista('a'), null);
+  });
+});
+
+describe('Gocce d Oro', () => {
+  test('il vincitore prende la vittoria piu il premio della prima del giorno', async () => {
+    giorno = '2026-11-15';
+    const { arn, archivio } = duePartiti();
+    arn.abbandona('b');
+    await arn.attendiScritture();
+
+    const dati = await archivio.leggi();
+    assert.equal(dati.utenti.find((u) => u.id === 'a')!.oro, 150, '50 + 100');
+    assert.equal(arn.vista('a')!.esito!.primaDelGiorno, 'a');
+  });
+
+  test('il perdente non torna a mani vuote', async () => {
+    giorno = '2026-11-15';
+    const { arn, archivio } = duePartiti();
+    arn.abbandona('b');
+    await arn.attendiScritture();
+    assert.equal((await archivio.leggi()).utenti.find((u) => u.id === 'b')!.oro, 15);
+  });
+
+  test('la seconda vittoria dello stesso giorno vale solo 50', async () => {
+    giorno = '2026-11-15';
+    const { arn, archivio } = duePartiti();
+    arn.abbandona('b');
+    await arn.attendiScritture();
+
+    arn.entra('a', 1000, MAZZO, 1000);
+    arn.entra('b', 1000, MAZZO, 1000);
+    arn.passaIlTempo(1000);
+    arn.presente('a', 1000);
+    arn.presente('b', 1000);
+    arn.abbandona('b');
+    await arn.attendiScritture();
+
+    assert.equal((await archivio.leggi()).utenti.find((u) => u.id === 'a')!.oro, 200, '150 + 50');
+    assert.equal(arn.vista('a')!.esito!.primaDelGiorno, null);
+  });
+
+  test('domani il premio torna disponibile', async () => {
+    giorno = '2026-11-15';
+    const { arn, archivio } = duePartiti();
+    arn.abbandona('b');
+    await arn.attendiScritture();
+
+    giorno = '2026-11-16';
+    arn.entra('a', 1000, MAZZO, 1000);
+    arn.entra('b', 1000, MAZZO, 1000);
+    arn.passaIlTempo(1000);
+    arn.presente('a', 1000);
+    arn.presente('b', 1000);
+    arn.abbandona('b');
+    await arn.attendiScritture();
+
+    assert.equal((await archivio.leggi()).utenti.find((u) => u.id === 'a')!.oro, 300, '150 + 150');
+  });
+
+  test('il premio segue chi vince, non chi gioca sempre', async () => {
+    giorno = '2026-11-20';
+    const { arn, archivio } = duePartiti();
+    arn.abbandona('a'); // vince b
+    await arn.attendiScritture();
+
+    const dati = await archivio.leggi();
+    assert.equal(dati.utenti.find((u) => u.id === 'b')!.oro, 150);
+    assert.equal(dati.utenti.find((u) => u.id === 'a')!.oro, 15);
+  });
+
+  test('a pareggio nessun premio, ma tutti e due hanno giocato', async () => {
+    giorno = '2026-11-21';
+    const { arn, archivio } = duePartiti();
+    arn.assente('a', 0);
+    arn.assente('b', 0);
+    arn.passaIlTempo(RICONNESSIONE_MS);
+    await arn.attendiScritture();
+
+    const dati = await archivio.leggi();
+    assert.equal(dati.utenti.find((u) => u.id === 'a')!.oro, 15);
+    assert.equal(dati.utenti.find((u) => u.id === 'b')!.oro, 15);
+    assert.equal(arn.vista('a')!.esito!.primaDelGiorno, null);
+  });
+
+  test('l esito dice quanto si e guadagnato, non solo chi ha vinto', async () => {
+    giorno = '2026-11-22';
+    const { arn } = duePartiti();
+    arn.abbandona('b');
+    await arn.attendiScritture();
+    assert.equal(arn.vista('a')!.esito!.oro['a'], 150);
+    assert.equal(arn.vista('b')!.esito!.oro['b'], 15);
   });
 });

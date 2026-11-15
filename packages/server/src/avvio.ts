@@ -11,11 +11,19 @@ import { archivioSuFile } from './archivio.ts';
 import { creaArena } from './arena.ts';
 import { creaServer } from './http.ts';
 import { rotte } from './rotte.ts';
+import { rotteCarte } from './rotte-carte.ts';
 import { rotteOnline } from './rotte-online.ts';
+import { rotteShop } from './rotte-shop.ts';
 
 const PORTA = Number(process.env.PORTA ?? 4000);
 const PERCORSO = process.env.ARCHIVIO ?? './dati/archivio.json';
 const ORIGINI = (process.env.ORIGINI ?? 'http://localhost:5173').split(',').map((o) => o.trim());
+/**
+ * Chi puo' giudicare le carte della community. Sta qui e non nel database di
+ * proposito: nessuna rotta puo' aggiungere un amministratore, quindi non c'e'
+ * modo di promuoversi da soli espugnando il pannello.
+ */
+const AMMINISTRATORI = (process.env.AMMINISTRATORI ?? '').split(',').map((e) => e.trim()).filter(Boolean);
 /** Ogni quanto l'arena guarda l'orologio: accoppiamenti, turni, abbandoni. */
 const BATTITO_MS = 1_000;
 
@@ -31,7 +39,12 @@ const battito = setInterval(() => {
 }, BATTITO_MS);
 
 const server = creaServer({
-  rotte: [...rotte(archivio), ...rotteOnline({ archivio, arena })],
+  rotte: [
+    ...rotte(archivio),
+    ...rotteCarte({ archivio, amministratori: AMMINISTRATORI }),
+    ...rotteShop({ archivio }),
+    ...rotteOnline({ archivio, arena }),
+  ],
   origini: ORIGINI,
 });
 
@@ -40,6 +53,11 @@ server.listen(PORTA, () => {
   console.log(`Archivio: ${PERCORSO}`);
   console.log(`Origini ammesse: ${ORIGINI.join(', ')}`);
   console.log(`Battito dell'arena: ogni ${BATTITO_MS} ms`);
+  console.log(
+    AMMINISTRATORI.length > 0
+      ? `Amministratori: ${AMMINISTRATORI.join(', ')}`
+      : "Nessun amministratore: il pannello di moderazione non si apre. Impostare AMMINISTRATORI.",
+  );
 });
 
 for (const segnale of ['SIGINT', 'SIGTERM'] as const) {

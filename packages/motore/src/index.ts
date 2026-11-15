@@ -7,3 +7,4 @@ export * from './tabellone.ts';
 export * from './rng.ts';
 export * from './occulta.ts';
 export * from './motore.ts';
+export * from './dotazione.ts';

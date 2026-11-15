@@ -5,7 +5,8 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "@bloodyfights/motore": "*"
+    "@bloodyfights/motore": "*",
+    "@bloodyfights/pixel": "*"
   },
   "scripts": {
     "avvia": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/avvio.ts",

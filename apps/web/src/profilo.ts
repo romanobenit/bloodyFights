@@ -1,4 +1,8 @@
-import { CONFIG, copieMassime, validaMazzo, type CartaCompleta } from '@bloodyfights/motore';
+import {
+  CONFIG,
+  COPIE_OGGETTO, collezioneIniziale, copieConcesse, copieMassime, mazzoIniziale, validaMazzo,
+  type CartaCompleta,
+} from '@bloodyfights/motore';
 import type { CartaCreata } from './editor.ts';
 import type { Decisione } from './moderazione.ts';
 
@@ -37,40 +41,18 @@ export interface Profilo {
 export const MAZZI_MASSIMI = 3;
 
 /**
- * COPIE CONCESSE A UN NUOVO PROFILO.
- *
- * Il cap. 12 propone "tutte e 20, cosi' un nuovo iscritto puo' comporre subito
- * un mazzo legale". Con una copia sola pero' esiste UN SOLO mazzo legale
- * possibile - venti carte diverse, nessuna scelta - e l'editor del mazzo non
- * avrebbe niente da fare.
- *
- * Quante copie dipende dalla carta: tante quante se ne possono mettere nel
- * mazzo, cosi' la collezione non promette copie inutilizzabili. Le carte
- * oggetto fanno eccezione e si concedono a mani basse: costano 0 e servono a
- * sperimentare. Da confermare: incide sull'economia dei bauli della fase 5.
+ * La dotazione di partenza vive nel motore, non qui: dalla fase 5 serve
+ * anche al server, e due copie della stessa regola divergerebbero al primo
+ * ritocco. Si riesportano perche' mezzo client le chiama da questo modulo.
  */
-export const COPIE_OGGETTO = 10;
-
-export function copieConcesse(carta: CartaCompleta): number {
-  if (carta.tipo === 'oggetto') return COPIE_OGGETTO;
-  return copieMassime(carta.costo);
-}
+export { COPIE_OGGETTO, copieConcesse };
 
 export function profiloIniziale(carte: readonly CartaCompleta[], nickname = 'Ospite'): Profilo {
-  const collezione: Record<string, number> = {};
-  for (const carta of carte) collezione[carta.id] = copieConcesse(carta);
-
-  // Un primo mazzo gia' legale: una copia di ciascuna delle 20 creature.
-  // Le carte oggetto restano fuori, o il mazzo sforerebbe le 20 carte.
-  const carteMazzo: Record<string, number> = {};
-  for (const carta of carte.filter((c) => c.tipo !== 'oggetto').slice(0, CONFIG.mazzo.carteNelMazzo))
-    carteMazzo[carta.id] = 1;
-
   return {
     nickname,
     bio: '',
-    collezione,
-    mazzi: [{ id: 'mazzo-1', nome: 'Mazzo base', carte: carteMazzo }],
+    collezione: collezioneIniziale(carte),
+    mazzi: [{ id: 'mazzo-1', nome: 'Mazzo base', carte: mazzoIniziale(carte) }],
     mazzoAttivoId: 'mazzo-1',
     vittorie: 0,
     sconfitte: 0,

@@ -1,3 +1,4 @@
+import { CARTE_BASE, collezioneIniziale, mazzoIniziale } from '@bloodyfights/motore';
 import { randomBytes, scrypt, timingSafeEqual, createHash } from 'node:crypto';
 import type { Archivio, Utente } from './archivio.ts';
 
@@ -151,6 +152,12 @@ export async function registra(
       vittorie: 0,
       sconfitte: 0,
       cartaCreataId: null,
+      // La dotazione di partenza la decide il motore, cosi' chi si registra
+      // riceve esattamente quello che ha chi gioca senza account.
+      collezione: collezioneIniziale(CARTE_BASE),
+      mazzi: [{ id: 'mazzo-1', nome: 'Mazzo base', carte: mazzoIniziale(CARTE_BASE) }],
+      mazzoAttivoId: 'mazzo-1',
+      ultimaVittoriaIl: null,
       creatoIl: new Date(adesso).toISOString(),
       tentativiFalliti: 0,
       ultimoTentativo: 0,

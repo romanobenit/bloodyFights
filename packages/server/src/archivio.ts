@@ -13,6 +13,14 @@ import { dirname } from 'node:path';
  * Lo schema delle tabelle del cap. 10.4 e' riprodotto come raccolte.
  */
 
+/** Un mazzo salvato: stessa forma di quello del client. */
+export interface MazzoSalvato {
+  id: string;
+  nome: string;
+  /** cartaId -> quante copie nel mazzo. */
+  carte: Record<string, number>;
+}
+
 export interface Utente {
   id: string;
   email: string;
@@ -26,6 +34,19 @@ export interface Utente {
   vittorie: number;
   sconfitte: number;
   cartaCreataId: string | null;
+  /**
+   * cartaId -> quante copie possedute. Dalla fase 5 vive qui e non nel
+   * browser: un baule aperto sul server deve avere dove consegnare le carte.
+   */
+  collezione: Record<string, number>;
+  mazzi: MazzoSalvato[];
+  mazzoAttivoId: string;
+  /**
+   * Giorno dell'ultima vittoria, in forma AAAA-MM-GG. Serve al premio della
+   * prima vittoria del giorno: si confronta la data, non l'istante, o il
+   * premio si potrebbe prendere due volte intorno a mezzanotte.
+   */
+  ultimaVittoriaIl: string | null;
   creatoIl: string;
   /** Tentativi di accesso falliti di fila, per frenare chi prova a forza. */
   tentativiFalliti: number;
@@ -43,13 +64,38 @@ export interface Sessione {
 export interface Dati {
   utenti: Utente[];
   sessioni: Sessione[];
+  /** Le carte create dagli utenti. La forma e' CartaArchiviata di carte.ts. */
   carte: Record<string, unknown>[];
   mazzi: Record<string, unknown>[];
   partite: Record<string, unknown>[];
+  /** Le aperture dei bauli: registrate prima di essere mostrate (cap. 8.2). */
+  aperture: Record<string, unknown>[];
 }
 
 export function datiVuoti(): Dati {
-  return { utenti: [], sessioni: [], carte: [], mazzi: [], partite: [] };
+  return { utenti: [], sessioni: [], carte: [], mazzi: [], partite: [], aperture: [] };
+}
+
+/**
+ * Riempie i campi che un archivio scritto da una versione precedente non ha.
+ *
+ * Senza questo, un utente registrato prima della fase 5 si ritroverebbe
+ * `collezione` indefinita, e la prima lettura cadrebbe su una proprieta' che
+ * non c'e'. Una migrazione in piena regola sarebbe sproporzionata per un
+ * file JSON: qui basta accorgersene in lettura.
+ *
+ * Non assegna la dotazione di partenza: quella la decide chi registra, e
+ * questo modulo non deve sapere cosa sono le carte.
+ */
+export function normalizza(dati: Dati): Dati {
+  dati.aperture ??= [];
+  for (const utente of dati.utenti) {
+    utente.collezione ??= {};
+    utente.mazzi ??= [];
+    utente.mazzoAttivoId ??= utente.mazzi[0]?.id ?? '';
+    utente.ultimaVittoriaIl ??= null;
+  }
+  return dati;
 }
 
 export interface Archivio {
@@ -60,7 +106,7 @@ export interface Archivio {
 
 /** Archivio in memoria: per i test, e per avviare il server senza scrivere niente. */
 export function archivioInMemoria(iniziali: Dati = datiVuoti()): Archivio {
-  let dati = structuredClone(iniziali);
+  let dati = normalizza(structuredClone(iniziali));
   let coda: Promise<unknown> = Promise.resolve();
 
   return {
@@ -100,7 +146,7 @@ export function archivioSuFile(percorso: string): Archivio {
   const leggiDalDisco = async (): Promise<Dati> => {
     try {
       const testo = await readFile(percorso, 'utf8');
-      return { ...datiVuoti(), ...(JSON.parse(testo) as Partial<Dati>) };
+      return normalizza({ ...datiVuoti(), ...(JSON.parse(testo) as Partial<Dati>) });
     } catch {
       return datiVuoti();
     }

@@ -1,5 +1,5 @@
 import {
-  type Azione, type CartaCompleta, type IndiceGiocatore, MossaIllegale,
+  CONFIG, type Azione, type CartaCompleta, type IndiceGiocatore, MossaIllegale,
   type StatoPartitaConCatalogo, applicaAzione, creaPartita, occulta, validaMazzo,
 } from '@bloodyfights/motore';
 import type { Archivio } from './archivio.ts';
@@ -47,6 +47,10 @@ export interface Esito {
   motivo: 'regole' | 'tempo' | 'abbandono';
   /** Punteggio nuovo per ogni utente. */
   mmr: Record<string, number>;
+  /** Gocce d'Oro guadagnate in questa partita, per ogni utente. */
+  oro: Record<string, number>;
+  /** Chi ha preso il premio della prima vittoria del giorno. */
+  primaDelGiorno: string | null;
 }
 
 export interface Ascoltatore {
@@ -60,11 +64,18 @@ export interface OpzioniArena {
   seme?: () => number;
   /** Generatore di identificativi, iniettabile per lo stesso motivo. */
   nuovoId?: () => string;
+  /**
+   * Il giorno corrente, in forma AAAA-MM-GG. Serve al premio della prima
+   * vittoria giornaliera, e si inietta per poterlo provare senza aspettare
+   * domani.
+   */
+  oggi?: () => string;
 }
 
 export function creaArena(opzioni: OpzioniArena) {
   const seme = opzioni.seme ?? (() => Math.floor(Math.random() * 2 ** 31));
   const nuovoId = opzioni.nuovoId ?? (() => crypto.randomUUID());
+  const oggi = opzioni.oggi ?? (() => new Date().toISOString().slice(0, 10));
 
   let coda: InAttesa[] = [];
   /** mazzo scelto da chi e' in coda */
@@ -270,7 +281,7 @@ export function creaArena(opzioni: OpzioniArena) {
 
   function chiudi(partita: PartitaOnline, vincitoreId: string | null, motivo: Esito['motivo']) {
     const [a, b] = partita.utenti;
-    partita.esito = { vincitoreId, motivo, mmr: {} };
+    partita.esito = { vincitoreId, motivo, mmr: {}, oro: {}, primaDelGiorno: null };
 
     // Il punteggio si aggiorna nell'archivio, ma la partita e' chiusa subito:
     // un archivio lento non deve tenere i due giocatori in attesa.
@@ -288,32 +299,64 @@ export function creaArena(opzioni: OpzioniArena) {
 
   async function registraEsito(partita: PartitaOnline, vincitoreId: string | null) {
     const [a, b] = partita.utenti;
-    const aggiornati = await opzioni.archivio.modifica((dati) => {
+    const giorno = oggi();
+
+    const conti = await opzioni.archivio.modifica((dati) => {
       const ua = dati.utenti.find((u) => u.id === a);
       const ub = dati.utenti.find((u) => u.id === b);
-      if (!ua || !ub) return {};
+      if (!ua || !ub) return { mmr: {}, oro: {}, primaDelGiorno: null };
 
       const mmrA = ua.mmr;
       const mmrB = ub.mmr;
+
       if (vincitoreId === null) {
-        // Pareggio: nessuno dei due ha vinto, i punteggi non si muovono.
-        return { [a]: mmrA, [b]: mmrB };
+        // Pareggio: nessuno dei due ha vinto. I punteggi non si muovono e
+        // non c'e' premio, ma l'oro della sconfitta tocca a tutti e due:
+        // hanno giocato comunque.
+        const premio = CONFIG.gocceDOro.sconfitta;
+        ua.oro += premio;
+        ub.oro += premio;
+        return {
+          mmr: { [a]: mmrA, [b]: mmrB },
+          oro: { [a]: premio, [b]: premio },
+          primaDelGiorno: null,
+        };
       }
 
       const aHaVinto = vincitoreId === a;
-      ua.mmr = nuovoMmr(mmrA, mmrB, aHaVinto);
-      ub.mmr = nuovoMmr(mmrB, mmrA, !aHaVinto);
-      if (aHaVinto) {
-        ua.vittorie += 1;
-        ub.sconfitte += 1;
-      } else {
-        ub.vittorie += 1;
-        ua.sconfitte += 1;
-      }
-      return { [a]: ua.mmr, [b]: ub.mmr };
+      const vincitore = aHaVinto ? ua : ub;
+      const perdente = aHaVinto ? ub : ua;
+
+      vincitore.mmr = nuovoMmr(vincitore.mmr, perdente.mmr, true);
+      perdente.mmr = nuovoMmr(aHaVinto ? mmrB : mmrA, aHaVinto ? mmrA : mmrB, false);
+      vincitore.vittorie += 1;
+      perdente.sconfitte += 1;
+
+      // Il premio giornaliero si decide sul GIORNO, non sull'istante: con un
+      // confronto di orari si potrebbe prendere due volte intorno a
+      // mezzanotte.
+      const primaOggi = vincitore.ultimaVittoriaIl !== giorno;
+      const oroVincitore =
+        CONFIG.gocceDOro.vittoria + (primaOggi ? CONFIG.gocceDOro.primaVittoriaDelGiorno : 0);
+      const oroPerdente = CONFIG.gocceDOro.sconfitta;
+
+      vincitore.oro += oroVincitore;
+      vincitore.ultimaVittoriaIl = giorno;
+      // Una partita persa non e' tempo buttato (cap. 8.1).
+      perdente.oro += oroPerdente;
+
+      return {
+        mmr: { [a]: ua.mmr, [b]: ub.mmr },
+        oro: aHaVinto ? { [a]: oroVincitore, [b]: oroPerdente } : { [a]: oroPerdente, [b]: oroVincitore },
+        primaDelGiorno: primaOggi ? vincitore.id : null,
+      };
     });
 
-    if (partita.esito) partita.esito.mmr = aggiornati as Record<string, number>;
+    if (partita.esito) {
+      partita.esito.mmr = conti.mmr as Record<string, number>;
+      partita.esito.oro = conti.oro as Record<string, number>;
+      partita.esito.primaDelGiorno = conti.primaDelGiorno as string | null;
+    }
     for (const u of partita.utenti) avvisa(u, { tipo: 'finita' });
   }
 

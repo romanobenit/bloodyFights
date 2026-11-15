@@ -5,3 +5,7 @@ export * from './rotte.ts';
 export * from './elo.ts';
 export * from './arena.ts';
 export * from './rotte-online.ts';
+export * from './carte.ts';
+export * from './rotte-carte.ts';
+export * from './bauli.ts';
+export * from './rotte-shop.ts';
